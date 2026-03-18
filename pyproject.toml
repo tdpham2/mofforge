@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mofforge"
+version = "0.1.0"
+description = "Find-and-replace tool for atomistic crystal structure models, especially MOFs"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "mofforge contributors"},
+]
+keywords = ["MOF", "crystal", "substructure", "find-replace", "materials"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "pymatgen>=2024.1.1,<2027",
+    "networkx>=3.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+mofforge = "mofforge.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mofforge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "UP007",   # X | Y union syntax (already used, but keep compat with older annotations)
+    "SIM108",  # ternary operator (can reduce readability in scientific code)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # allow assert False in tests
