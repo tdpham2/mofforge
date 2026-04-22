@@ -197,5 +197,223 @@ def batch_cmd(config_path, verbose):
             click.echo(f"    -> {r.output_path}")
 
 
+# ------------------------------------------------------------------ #
+# Render command
+# ------------------------------------------------------------------ #
+
+
+@main.command("render")
+@click.option(
+    "-i", "--input", "input_file", required=True, help="Path to input structure file (CIF or XYZ)."
+)
+@click.option(
+    "-o", "--output", "output_file", default="structure.png", help="Output PNG file path."
+)
+@click.option(
+    "--label-mode",
+    type=click.Choice(["sequential", "per_element", "none"]),
+    default="sequential",
+    help="Atom label mode.",
+)
+@click.option(
+    "--representation",
+    type=click.Choice(["ball_stick", "stick", "sphere"]),
+    default="ball_stick",
+    help="Visual representation style.",
+)
+@click.option("--width", default=800, type=int, help="Image width in pixels.")
+@click.option("--height", default=600, type=int, help="Image height in pixels.")
+@click.option(
+    "--show-unit-cell/--no-unit-cell",
+    default=None,
+    help="Draw unit cell edges (auto for CIF files).",
+)
+@click.option("--show-formula/--no-formula", default=True, help="Show chemical formula overlay.")
+@click.option("--bg-color", default="white", help="Background color.")
+@click.option("--label-size", default=14, type=int, help="Font size for atom labels.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def render_cmd(
+    input_file,
+    output_file,
+    label_mode,
+    representation,
+    width,
+    height,
+    show_unit_cell,
+    show_formula,
+    bg_color,
+    label_size,
+    verbose,
+):
+    """Render a structure file to a PNG image."""
+    _setup_logging(verbose)
+
+    from mofforge.vis.render import render_file_to_png
+
+    click.echo(f"Rendering: {input_file}")
+
+    # If show_unit_cell is None (not explicitly set), let render_file_to_png
+    # auto-detect based on file extension.
+    kwargs = {}
+    if show_unit_cell is not None:
+        kwargs["show_unit_cell"] = show_unit_cell
+
+    output_path = render_file_to_png(
+        input_file=input_file,
+        output_file=output_file,
+        label_mode=label_mode,
+        width=width,
+        height=height,
+        representation=representation,
+        label_size=label_size,
+        show_formula=show_formula,
+        bg_color=bg_color,
+        **kwargs,
+    )
+    click.echo(f"Output written to: {output_path}")
+
+
+# ------------------------------------------------------------------ #
+# Build commands
+# ------------------------------------------------------------------ #
+
+
+@main.command("build")
+@click.option(
+    "--backend",
+    "-b",
+    type=click.Choice(["tobacco", "pormake"]),
+    default="tobacco",
+    help="Builder backend to use.",
+)
+@click.option("--topology", "-t", required=True, help="Topology name (e.g. 'pcu' or 'pcu.cif').")
+@click.option("--node", "-n", multiple=True, help="Node building-block file(s).")
+@click.option("--edge", "-e", multiple=True, help="Edge building-block file(s).")
+@click.option("-o", "--output", "output_dir", default=".", help="Output directory for CIF files.")
+@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
+@click.option("--parallel", is_flag=True, help="Run TOBACCO in parallel mode.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def build_cmd(backend, topology, node, edge, output_dir, tobacco_path, parallel, verbose):
+    """Build a MOF structure from topology + building blocks."""
+    _setup_logging(verbose)
+
+    from mofforge.build import MOFBuilder
+
+    kwargs = {}
+    if tobacco_path:
+        kwargs["tobacco_path"] = tobacco_path
+
+    try:
+        builder = MOFBuilder(backend=backend, **kwargs)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    # Register building blocks
+    for n in node:
+        builder.add_node(n)
+    for e in edge:
+        builder.add_edge(e)
+
+    # Build
+    click.echo(f"Building MOF with {backend} backend (topology={topology})")
+    build_kwargs = {}
+    if parallel:
+        build_kwargs["parallel"] = True
+
+    result = builder.build(topology=topology, output_dir=output_dir, **build_kwargs)
+
+    if result.success:
+        click.echo(f"Build succeeded in {result.elapsed_seconds}s")
+        for p in result.output_paths:
+            click.echo(f"  Output: {p}")
+        if result.crystal:
+            click.echo(f"  Atoms: {result.crystal.n_atoms}")
+    else:
+        click.echo("Build failed:")
+        for err in result.errors:
+            click.echo(f"  {err}")
+        sys.exit(1)
+
+
+@main.command("build-status")
+@click.option(
+    "--backend",
+    "-b",
+    type=click.Choice(["tobacco", "pormake"]),
+    default="tobacco",
+    help="Builder backend.",
+)
+@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def build_status_cmd(backend, tobacco_path, verbose):
+    """Show status of a builder backend."""
+    _setup_logging(verbose)
+
+    import json
+
+    from mofforge.build import MOFBuilder
+
+    kwargs = {}
+    if tobacco_path:
+        kwargs["tobacco_path"] = tobacco_path
+
+    try:
+        builder = MOFBuilder(backend=backend, **kwargs)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    status = builder.status()
+    click.echo(json.dumps(status, indent=2, default=str))
+
+
+@main.command("build-list")
+@click.option(
+    "--backend",
+    "-b",
+    type=click.Choice(["tobacco", "pormake"]),
+    default="tobacco",
+    help="Builder backend.",
+)
+@click.option(
+    "--type",
+    "list_type",
+    type=click.Choice(["topologies", "nodes", "edges"]),
+    required=True,
+    help="What to list.",
+)
+@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def build_list_cmd(backend, list_type, tobacco_path, verbose):
+    """List available topologies or building blocks."""
+    _setup_logging(verbose)
+
+    from mofforge.build import MOFBuilder
+
+    kwargs = {}
+    if tobacco_path:
+        kwargs["tobacco_path"] = tobacco_path
+
+    try:
+        builder = MOFBuilder(backend=backend, **kwargs)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    if list_type == "topologies":
+        items = builder.list_topologies()
+        click.echo(f"Available topologies ({len(items)}):")
+    elif list_type == "nodes":
+        items = builder.list_nodes()
+        click.echo(f"Available nodes ({len(items)}):")
+    elif list_type == "edges":
+        items = builder.list_edges()
+        click.echo(f"Available edges ({len(items)}):")
+
+    for item in items:
+        click.echo(f"  {item}")
+
+
 if __name__ == "__main__":
     main()

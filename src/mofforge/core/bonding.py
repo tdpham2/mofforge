@@ -207,6 +207,8 @@ def infer_bonds(
     if periodic:
         # Use pymatgen's neighbor search with PBC
         all_neighbors = structure.get_all_neighbors(max_cutoff)
+        # Pre-compute fractional coordinates once to avoid repeated copies
+        frac_coords = xtal.frac_coords
         for i, neighbors in enumerate(all_neighbors):
             sp_i = species_list[i]
             for neighbor in neighbors:
@@ -219,8 +221,8 @@ def infer_bonds(
                 max_dist = _get_max_bond_dist(sp_i, sp_j, rule_lookup)
                 if max_dist is not None and dist <= max_dist:
                     cross_pb = is_cross_boundary(
-                        xtal.frac_coords[i],
-                        xtal.frac_coords[j],
+                        frac_coords[i],
+                        frac_coords[j],
                         lattice,
                         dist,
                     )

@@ -1,12 +1,13 @@
-"""mofforge: Find-and-replace tool for atomistic crystal structure models.
+"""mofforge: Build and modify atomistic crystal structure models.
 
-A Python package for searching and modifying crystal structures,
-especially metal-organic frameworks (MOFs). Provides pattern
-matching via VF2 graph isomorphism and fragment replacement via
-SVD-based Procrustes alignment.
+A Python package for constructing and modifying crystal structures,
+especially metal-organic frameworks (MOFs). Provides MOF construction
+from topology + building blocks (via TOBACCO and Pormake backends),
+pattern matching via VF2 graph isomorphism, and fragment replacement
+via SVD-based Procrustes alignment.
 
-Features include VF2 algorithm, SMARTS-like pattern matching,
-batch processing, multi-step pipelines, structure validation,
+Features include MOF construction, VF2 algorithm, SMARTS-like pattern
+matching, batch processing, multi-step pipelines, structure validation,
 and provenance tracking.
 """
 
@@ -17,8 +18,23 @@ try:
 except Exception:
     __version__ = "0.1.0"  # fallback for editable installs without metadata
 
-# Core data structures
+from mofforge.adsorbate import (
+    AdsorbatePlacement,
+    AdsorptionSite,
+    available_molecules,
+    find_adsorption_sites,
+    get_molecule,
+    place_adsorbate,
+)
 from mofforge.batch import run_batch
+from mofforge.build import (
+    BuildConfig,
+    BuildingBlock,
+    BuildResult,
+    ConfigError,
+    MOFBuilder,
+    Topology,
+)
 from mofforge.core.bonding import BondingRule, infer_bonds, remove_bonds
 from mofforge.core.crystal import Crystal
 from mofforge.core.moiety import (
@@ -27,46 +43,56 @@ from mofforge.core.moiety import (
     subtract_anchor,
     untag_anchor,
 )
-
-# I/O
 from mofforge.io.cif import read_cif, write_cif
 from mofforge.io.xyz import read_xyz, write_xyz
 from mofforge.pipeline import Pipeline
 from mofforge.provenance import Provenance
 from mofforge.replace.alignment import Alignment
 from mofforge.replace.conglomerate import reassemble
-
-# Replace
 from mofforge.replace.replace import replace_pattern, swap
-
-# Search
 from mofforge.search.search import MatchResult, find_pattern
 from mofforge.smarts import parse_smarts, smarts_search
-
-# Configuration
 from mofforge.utils.config import config, set_paths
-
-# Validation
 from mofforge.validation import ValidationReport, validate_structure
+from mofforge.vis import (
+    build_html,
+    render_file_to_png,
+    render_to_png,
+)
 
 __all__ = [
+    "AdsorbatePlacement",
+    "AdsorptionSite",
     "Alignment",
     "BondingRule",
+    "BuildConfig",
+    "BuildResult",
+    "BuildingBlock",
+    "ConfigError",
     "Crystal",
+    "MOFBuilder",
     "MatchResult",
     "Pipeline",
     "Provenance",
+    "Topology",
     "ValidationReport",
     "anchor_indices",
+    "available_molecules",
+    "build_html",
     "config",
+    "find_adsorption_sites",
     "find_pattern",
     "fragment",
+    "get_molecule",
     "infer_bonds",
     "parse_smarts",
+    "place_adsorbate",
     "read_cif",
     "read_xyz",
     "reassemble",
     "remove_bonds",
+    "render_file_to_png",
+    "render_to_png",
     "replace_pattern",
     "run_batch",
     "set_paths",

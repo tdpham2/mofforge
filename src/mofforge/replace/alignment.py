@@ -65,12 +65,17 @@ def get_r2p_alignment(
         Alignment with rotation matrix, translations, and error.
 
     Raises:
-        ValueError: If replacement or parent has fewer than 3 atoms.
+        ValueError: If there are fewer than 2 alignment points, or if
+            the replacement or parent have no atoms.
     """
-    if replacement.n_atoms < 3 or parent.n_atoms < 3:
+    n_align = len(r2p)
+    if n_align < 2:
         raise ValueError(
-            "Parent and replacement must each have at least 3 atoms for SVD alignment."
+            f"Need at least 2 alignment points for SVD alignment, got {n_align}. "
+            "The replacement fragment must share at least 2 atoms with the query."
         )
+    if replacement.n_atoms == 0 or parent.n_atoms == 0:
+        raise ValueError("Parent and replacement must each have at least 1 atom.")
 
     # -- Replacement coordinates (atoms involved in alignment) --
     r_indices = [r for r, p in r2p.items()]

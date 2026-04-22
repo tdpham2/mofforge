@@ -167,6 +167,13 @@ def _process_single(
         for op in config.operations:
             op_type = op.get("type", "")
 
+            _VALID_OP_TYPES = ("replace", "remove", "validate")
+            if op_type not in _VALID_OP_TYPES:
+                raise ValueError(
+                    f"Unknown operation type '{op_type}' in batch config. "
+                    f"Must be one of: {', '.join(_VALID_OP_TYPES)}."
+                )
+
             if op_type == "replace":
                 query_name = op.get("query")
                 replacement_name = op.get("replacement")

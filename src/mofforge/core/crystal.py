@@ -318,11 +318,20 @@ class Crystal:
         for u, v, data in other.bonds.edges(data=True):
             new_bonds.add_edge(u + offset, v + offset, **data)
 
+        # Warn if provenance is being lost from the other crystal
+        if other.provenance is not None and self.provenance is not None:
+            logger.debug(
+                "Crystal.__add__: both operands have provenance; "
+                "only the left operand's provenance is kept."
+            )
+
+        combined_provenance = self.provenance if self.provenance is not None else other.provenance
+
         return Crystal(
             name=self.name,
             structure=new_structure,
             bonds=new_bonds,
-            provenance=self.provenance,
+            provenance=combined_provenance,
             species_labels=combined_labels,
         )
 
@@ -355,9 +364,15 @@ class Crystal:
             raise ValueError(
                 f"Expected coordinates shape ({self.n_atoms}, 3), got {new_coords.shape}."
             )
+        # Rebuild the structure in one shot instead of O(N) item assignment
         clean = [_clean_species(s) for s in self._species_labels]
-        for i in range(self.n_atoms):
-            self.structure[i] = clean[i], new_coords[i]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.structure = Structure(
+                self.lattice,
+                clean,
+                new_coords,
+            )
 
     def set_cart_coords(self, new_coords: np.ndarray) -> None:
         """Update Cartesian coordinates in-place (converted to fractional).

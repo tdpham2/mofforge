@@ -84,8 +84,16 @@ def _find_query_in_replacement(
             "The replacement must contain the unmasked portion of the query."
         )
 
-    # Take the first isomorphism
-    q2r = {q: q_in_r.isomorphisms[0][0][q] for q in range(nb_not_masked)}
+    # Take the first isomorphism.
+    # query_unmasked was created via __getitem__ which renumbers indices to
+    # 0..len(unmasked_indices)-1, so the keys should be exactly 0..nb_not_masked-1.
+    first_isom = q_in_r.isomorphisms[0][0]
+    if set(first_isom.keys()) != set(range(nb_not_masked)):
+        raise ValueError(
+            f"Unexpected isomorphism keys: expected {{0..{nb_not_masked - 1}}}, "
+            f"got {set(first_isom.keys())}. This indicates a bug in index renumbering."
+        )
+    q2r = {q: first_isom[q] for q in range(nb_not_masked)}
     return q2r
 
 
@@ -546,7 +554,11 @@ def _handle_supercell(
         Child crystal from the supercell replacement.
     """
     logger.warning(
-        "Replacement fragment too large for unit cell. Creating supercell (auto_supercell=True)."
+        "Replacement fragment too large for unit cell. Creating 2x2x2 supercell "
+        "(auto_supercell=True). WARNING: original location/orientation selections "
+        "cannot be preserved in the supercell — %d locations will be replaced "
+        "with optimal orientation instead.",
+        len(configs),
     )
 
     # Create 2x2x2 supercell of parent — rebuild Crystal from scratch so that
@@ -564,10 +576,19 @@ def _handle_supercell(
     # Re-derive configs: the original configs referenced locations/orientations
     # in the original match.  The supercell has different (and more) locations,
     # so we select the same number of locations with optimal orientation.
+    # NOTE: orientation 0 is used because the supercell's location ordering
+    # differs from the original; the original selections cannot be mapped.
     nb_loc = len(configs)
     n_super_locations = new_match.nb_locations()
+    if nb_loc > n_super_locations:
+        logger.warning(
+            "Requested %d locations but supercell only has %d; replacing at %d locations.",
+            nb_loc,
+            n_super_locations,
+            n_super_locations,
+        )
     nb_loc = min(nb_loc, n_super_locations)
-    new_configs = [(loc_id, 0) for loc_id in range(nb_loc)]
+    new_configs = [(loc_id, None) for loc_id in range(nb_loc)]
 
     # Re-do replacement without auto_supercell to avoid recursion
     child = effect_replacements(new_match, replacement, new_configs, name)

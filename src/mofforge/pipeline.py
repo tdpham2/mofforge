@@ -1,7 +1,8 @@
 """Multi-step replacement pipeline API.
 
 Provides a fluent interface for chaining multiple find-and-replace
-operations on a crystal structure.
+operations on a crystal structure.  Can also start from scratch by
+building a MOF with :meth:`Pipeline.build_mof`.
 """
 
 from __future__ import annotations
@@ -242,3 +243,79 @@ class Pipeline:
     def validation_reports(self) -> list[ValidationReport]:
         """Access validation reports from completed pipeline runs."""
         return self._reports
+
+    # ------------------------------------------------------------------ #
+    # Factory: build a MOF from scratch, then modify
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def build_mof(
+        cls,
+        backend: str = "tobacco",
+        topology: str = "pcu",
+        nodes: list[str | Path] | None = None,
+        edges: list[str | Path] | None = None,
+        output_dir: str | Path = ".",
+        fragment_path: str | Path | None = None,
+        **backend_kwargs: Any,
+    ) -> Pipeline:
+        """Build a MOF from scratch and return a pipeline for further modifications.
+
+        Combines construction (via TOBACCO or Pormake) with the
+        existing find-and-replace pipeline in a single fluent chain.
+
+        Example::
+
+            child = (Pipeline.build_mof(
+                        backend="tobacco", topology="pcu",
+                        tobacco_path="/path/to/tobacco_3.0")
+                .replace(query="BDC.xyz", replacement="NH2-BDC.xyz")
+                .validate()
+                .build(name="functionalized_pcu_MOF"))
+
+        Args:
+            backend: ``"tobacco"`` or ``"pormake"``.
+            topology: Topology name (e.g. ``"pcu"`` or ``"pcu.cif"``).
+            nodes: Paths to node building-block files to register
+                before building.
+            edges: Paths to edge building-block files to register
+                before building.
+            output_dir: Where to write generated CIF files.
+            fragment_path: Optional path to directory containing
+                fragment XYZ files (for downstream replace/remove steps).
+            **backend_kwargs: Passed to :class:`~mofforge.build.MOFBuilder`
+                constructor (e.g. ``tobacco_path="/path/to/tobacco_3.0"``).
+
+        Returns:
+            A :class:`Pipeline` initialised with the built crystal,
+            ready for chaining ``.replace()`` / ``.remove()`` /
+            ``.validate()`` / ``.build()`` calls.
+
+        Raises:
+            RuntimeError: If the MOF build fails.
+        """
+        from mofforge.build import MOFBuilder
+
+        builder = MOFBuilder(backend=backend, **backend_kwargs)
+
+        if nodes:
+            for n in nodes:
+                builder.add_node(n)
+        if edges:
+            for e in edges:
+                builder.add_edge(e)
+
+        result = builder.build(topology=topology, output_dir=output_dir)
+
+        if not result.success or result.crystal is None:
+            error_msg = "; ".join(result.errors) if result.errors else "unknown error"
+            raise RuntimeError(f"MOF build failed: {error_msg}")
+
+        logger.info(
+            "MOF built with %s backend (topology=%s, %d output files)",
+            backend,
+            topology,
+            len(result.output_paths),
+        )
+
+        return cls(parent=result.crystal, fragment_path=fragment_path)
