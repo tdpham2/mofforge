@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "mofforge"
 version = "0.1.0"
-description = "Find-and-replace tool for atomistic crystal structure models, especially MOFs"
+description = "Build and modify atomistic crystal structure models, especially MOFs"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
     {name = "mofforge contributors"},
 ]
-keywords = ["MOF", "crystal", "substructure", "find-replace", "materials"]
+keywords = ["MOF", "crystal", "substructure", "find-replace", "materials", "construction", "topology"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -27,9 +27,23 @@ dependencies = [
     "scipy>=1.10",
     "click>=8.0",
     "pyyaml>=6.0",
+    # TOML config (stdlib tomllib requires Python 3.11+)
+    "tomli>=1.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
+vis = [
+    "playwright",
+]
+build = [
+    "pormake",
+]
+mcp = [
+    "mcp[cli]>=1.0",
+]
+all = [
+    "mofforge[vis,build,mcp]",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -38,6 +52,7 @@ dev = [
 
 [project.scripts]
 mofforge = "mofforge.cli:main"
+mofforge-mcp = "mofforge.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mofforge"]

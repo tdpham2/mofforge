@@ -1,0 +1,236 @@
+"""Element colors and metadata for structure visualization.
+
+Provides:
+- ``JMOL_COLORS``: Jmol hex color scheme for ~90 elements.
+- ``METALS``: Set of metal element symbols.
+- ``get_element_color(symbol)``: Look up the hex color for an element.
+
+Source for Jmol colors: https://jmol.sourceforge.net/jscolors/
+"""
+
+from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Jmol color scheme (RGB hex) for common elements.
+# ---------------------------------------------------------------------------
+
+JMOL_COLORS: dict[str, str] = {
+    "H": "#FFFFFF",
+    "He": "#D9FFFF",
+    "Li": "#CC80FF",
+    "Be": "#C2FF00",
+    "B": "#FFB5B5",
+    "C": "#909090",
+    "N": "#3050F8",
+    "O": "#FF0D0D",
+    "F": "#90E050",
+    "Ne": "#B3E3F5",
+    "Na": "#AB5CF2",
+    "Mg": "#8AFF00",
+    "Al": "#BFA6A6",
+    "Si": "#F0C8A0",
+    "P": "#FF8000",
+    "S": "#FFFF30",
+    "Cl": "#1FF01F",
+    "Ar": "#80D1E3",
+    "K": "#8F40D4",
+    "Ca": "#3DFF00",
+    "Sc": "#E6E6E6",
+    "Ti": "#BFC2C7",
+    "V": "#A6A6AB",
+    "Cr": "#8A99C7",
+    "Mn": "#9C7AC7",
+    "Fe": "#E06633",
+    "Co": "#F090A0",
+    "Ni": "#50D050",
+    "Cu": "#C88033",
+    "Zn": "#7D80B0",
+    "Ga": "#C28F8F",
+    "Ge": "#668F8F",
+    "As": "#BD80E3",
+    "Se": "#FFA100",
+    "Br": "#A62929",
+    "Kr": "#5CB8D1",
+    "Rb": "#702EB0",
+    "Sr": "#00FF00",
+    "Y": "#94FFFF",
+    "Zr": "#94E0E0",
+    "Nb": "#73C2C9",
+    "Mo": "#54B5B5",
+    "Tc": "#3B9E9E",
+    "Ru": "#248F8F",
+    "Rh": "#0A7D8C",
+    "Pd": "#006985",
+    "Ag": "#C0C0C0",
+    "Cd": "#FFD98F",
+    "In": "#A67573",
+    "Sn": "#668080",
+    "Sb": "#9E63B5",
+    "Te": "#D47A00",
+    "I": "#940094",
+    "Xe": "#429EB0",
+    "Cs": "#57178F",
+    "Ba": "#00C900",
+    "La": "#70D4FF",
+    "Ce": "#FFFFC7",
+    "Pr": "#D9FFC7",
+    "Nd": "#C7FFC7",
+    "Pm": "#A3FFC7",
+    "Sm": "#8FFFC7",
+    "Eu": "#61FFC7",
+    "Gd": "#45FFC7",
+    "Tb": "#30FFC7",
+    "Dy": "#1FFFC7",
+    "Ho": "#00FF9C",
+    "Er": "#00E675",
+    "Tm": "#00D452",
+    "Yb": "#00BF38",
+    "Lu": "#00AB24",
+    "Hf": "#4DC2FF",
+    "Ta": "#4DA6FF",
+    "W": "#2194D6",
+    "Re": "#267DAB",
+    "Os": "#266696",
+    "Ir": "#175487",
+    "Pt": "#D0D0E0",
+    "Au": "#FFD123",
+    "Hg": "#B8B8D0",
+    "Tl": "#A6544D",
+    "Pb": "#575961",
+    "Bi": "#9E4FB5",
+    "Po": "#AB5C00",
+    "At": "#754F45",
+    "Rn": "#428296",
+    "Fr": "#420066",
+    "Ra": "#007D00",
+    "Ac": "#70ABFA",
+    "Th": "#00BAFF",
+    "Pa": "#00A1FF",
+    "U": "#008FFF",
+    "Np": "#0080FF",
+    "Pu": "#006BFF",
+    "Am": "#545CF2",
+}
+
+DEFAULT_COLOR = "#FF1493"
+
+# ---------------------------------------------------------------------------
+# Metal elements (comprehensive set for MOF chemistry)
+# ---------------------------------------------------------------------------
+
+METALS: frozenset[str] = frozenset(
+    [
+        # Alkali metals
+        "Li",
+        "Na",
+        "K",
+        "Rb",
+        "Cs",
+        "Fr",
+        # Alkaline earth metals
+        "Be",
+        "Mg",
+        "Ca",
+        "Sr",
+        "Ba",
+        "Ra",
+        # Transition metals (3d, 4d, 5d, 6d)
+        "Sc",
+        "Ti",
+        "V",
+        "Cr",
+        "Mn",
+        "Fe",
+        "Co",
+        "Ni",
+        "Cu",
+        "Zn",
+        "Y",
+        "Zr",
+        "Nb",
+        "Mo",
+        "Tc",
+        "Ru",
+        "Rh",
+        "Pd",
+        "Ag",
+        "Cd",
+        "Hf",
+        "Ta",
+        "W",
+        "Re",
+        "Os",
+        "Ir",
+        "Pt",
+        "Au",
+        "Hg",
+        "Rf",
+        "Db",
+        "Sg",
+        "Bh",
+        "Hs",
+        # Post-transition metals
+        "Al",
+        "Ga",
+        "In",
+        "Sn",
+        "Tl",
+        "Pb",
+        "Bi",
+        "Nh",
+        "Fl",
+        "Mc",
+        "Lv",
+        # Lanthanides
+        "La",
+        "Ce",
+        "Pr",
+        "Nd",
+        "Pm",
+        "Sm",
+        "Eu",
+        "Gd",
+        "Tb",
+        "Dy",
+        "Ho",
+        "Er",
+        "Tm",
+        "Yb",
+        "Lu",
+        # Actinides
+        "Ac",
+        "Th",
+        "Pa",
+        "U",
+        "Np",
+        "Pu",
+        "Am",
+        "Cm",
+        "Bk",
+        "Cf",
+        "Es",
+        "Fm",
+        "Md",
+        "No",
+        "Lr",
+    ]
+)
+
+
+def get_element_color(symbol: str) -> str:
+    """Return the Jmol hex color for an element symbol.
+
+    Parameters
+    ----------
+    symbol : str
+        Element symbol (e.g. ``"Zn"``, ``"C"``).  R-group tags
+        (``"H!"``) are stripped automatically.
+
+    Returns
+    -------
+    str
+        Hex color string (e.g. ``"#7D80B0"``).
+    """
+    # Strip R-group tag if present
+    clean = symbol.rstrip("!")
+    return JMOL_COLORS.get(clean, DEFAULT_COLOR)

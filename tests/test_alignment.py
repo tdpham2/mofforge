@@ -59,8 +59,8 @@ class TestAlignment:
         alignment = get_r2p_alignment(replacement, parent, r2p, q2p)
         assert alignment.error < 0.1
 
-    def test_too_few_atoms_raises(self):
-        """Alignment with < 3 atoms should raise ValueError."""
+    def test_two_atom_alignment_works(self):
+        """Alignment with 2 atoms should succeed (translation + partial rotation)."""
         species = ["C", "N"]
         coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
         replacement = _make_crystal_from_cart(species, coords, "rep")
@@ -69,7 +69,20 @@ class TestAlignment:
         r2p = {0: 0, 1: 1}
         q2p = {0: 0, 1: 1}
 
-        with pytest.raises(ValueError, match="at least 3 atoms"):
+        alignment = get_r2p_alignment(replacement, parent, r2p, q2p)
+        assert alignment.error < 0.1
+
+    def test_too_few_alignment_points_raises(self):
+        """Alignment with < 2 alignment points should raise ValueError."""
+        species = ["C", "N", "O"]
+        coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        replacement = _make_crystal_from_cart(species, coords, "rep")
+        parent = _make_crystal_from_cart(species, coords, "parent")
+
+        r2p = {0: 0}  # only 1 alignment point
+        q2p = {0: 0, 1: 1, 2: 2}
+
+        with pytest.raises(ValueError, match="at least 2 alignment points"):
             get_r2p_alignment(replacement, parent, r2p, q2p)
 
     def test_apply_alignment_preserves_atom_count(self):

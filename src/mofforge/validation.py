@@ -221,9 +221,14 @@ def _check_coordination(crystal: Crystal, report: ValidationReport) -> None:
 
 def _check_charges(crystal: Crystal, report: ValidationReport) -> None:
     """Check charge balance (placeholder — requires oxidation state info)."""
-    # pymatgen structures may have oxidation states
+    # pymatgen structures may have oxidation states.
+    # Use site.species (Composition) rather than deprecated site.specie.
     try:
-        total_charge = sum(getattr(site.specie, "oxi_state", 0) for site in crystal.structure)
+        total_charge = 0.0
+        for site in crystal.structure:
+            # site.species is a Composition; iterate its Species objects
+            for sp, amt in site.species.items():
+                total_charge += getattr(sp, "oxi_state", 0) * amt
         report.charge_balance = total_charge
         if abs(total_charge) > 0.1:
             report.warnings.append(f"Non-zero net charge: {total_charge:.3f}")
