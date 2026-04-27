@@ -1,8 +1,4 @@
-"""Subgraph isomorphism using NetworkX's VF2 algorithm.
-
-Uses the well-tested VF2 algorithm from NetworkX for efficient
-subgraph isomorphism detection in molecular bond graphs.
-"""
+"""Subgraph isomorphism using NetworkX's VF2 algorithm."""
 
 from __future__ import annotations
 
@@ -24,26 +20,7 @@ def find_subgraph_isomorphisms(
     parent_graph: nx.Graph,
     disconnected_component: bool = False,
 ) -> list[dict[int, int]]:
-    """Find all subgraph isomorphisms of a query graph within a parent graph.
-
-    Uses NetworkX's VF2 algorithm for subgraph isomorphism detection.
-    Nodes are matched by their 'species' attribute.
-
-    Args:
-        query_graph: The smaller graph to search for. Nodes must have
-            'species' attribute.
-        parent_graph: The larger graph to search in. Nodes must have
-            'species' attribute.
-        disconnected_component: If True, searches for exact graph
-            isomorphisms (not subgraph) on connected components of
-            the parent that match the query size. Used for finding
-            isolated guest molecules.
-
-    Returns:
-        List of dicts mapping query node IDs to parent node IDs.
-        Each dict represents one isomorphism:
-            {query_atom_idx: parent_atom_idx, ...}
-    """
+    """Find all subgraph isomorphisms of a query graph within a parent graph."""
     if query_graph.number_of_nodes() == 0:
         return []
 

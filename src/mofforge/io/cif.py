@@ -10,15 +10,7 @@ from pymatgen.io.cif import CifParser, CifWriter
 
 
 def read_cif(filepath: str | Path, primitive: bool = False) -> Structure:
-    """Read a CIF file and return a pymatgen Structure.
-
-    Args:
-        filepath: Path to the CIF file.
-        primitive: If True, return the primitive cell.
-
-    Returns:
-        pymatgen Structure object.
-    """
+    """Read a CIF file and return a pymatgen Structure."""
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"CIF file not found: {filepath}")
@@ -35,12 +27,7 @@ def read_cif(filepath: str | Path, primitive: bool = False) -> Structure:
 
 
 def write_cif(structure: Structure, filepath: str | Path) -> None:
-    """Write a pymatgen Structure to a CIF file.
-
-    Args:
-        structure: pymatgen Structure to write.
-        filepath: Output file path.
-    """
+    """Write a pymatgen Structure to a CIF file."""
     filepath = Path(filepath)
     writer = CifWriter(structure)
     writer.write_file(str(filepath))

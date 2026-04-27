@@ -1,18 +1,6 @@
-"""Element colors and metadata for structure visualization.
-
-Provides:
-- ``JMOL_COLORS``: Jmol hex color scheme for ~90 elements.
-- ``METALS``: Set of metal element symbols.
-- ``get_element_color(symbol)``: Look up the hex color for an element.
-
-Source for Jmol colors: https://jmol.sourceforge.net/jscolors/
-"""
+"""Element colors for structure visualization."""
 
 from __future__ import annotations
-
-# ---------------------------------------------------------------------------
-# Jmol color scheme (RGB hex) for common elements.
-# ---------------------------------------------------------------------------
 
 JMOL_COLORS: dict[str, str] = {
     "H": "#FFFFFF",
@@ -114,10 +102,6 @@ JMOL_COLORS: dict[str, str] = {
 
 DEFAULT_COLOR = "#FF1493"
 
-# ---------------------------------------------------------------------------
-# Metal elements (comprehensive set for MOF chemistry)
-# ---------------------------------------------------------------------------
-
 METALS: frozenset[str] = frozenset(
     [
         # Alkali metals
@@ -218,19 +202,6 @@ METALS: frozenset[str] = frozenset(
 
 
 def get_element_color(symbol: str) -> str:
-    """Return the Jmol hex color for an element symbol.
-
-    Parameters
-    ----------
-    symbol : str
-        Element symbol (e.g. ``"Zn"``, ``"C"``).  R-group tags
-        (``"H!"``) are stripped automatically.
-
-    Returns
-    -------
-    str
-        Hex color string (e.g. ``"#7D80B0"``).
-    """
-    # Strip R-group tag if present
+    """Return the Jmol hex color for an element symbol."""
     clean = symbol.rstrip("!")
     return JMOL_COLORS.get(clean, DEFAULT_COLOR)

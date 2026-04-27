@@ -21,13 +21,7 @@ logger = logging.getLogger("mofforge")
 
 @dataclass
 class BondingRule:
-    """A rule for determining if two atoms are bonded.
-
-    Attributes:
-        species_i: First atom species (e.g. 'C').
-        species_j: Second atom species (e.g. 'O').
-        max_dist: Maximum bonding distance in Angstroms.
-    """
+    """A rule for determining if two atoms are bonded."""
 
     species_i: str
     species_j: str
@@ -45,16 +39,8 @@ def default_bonding_rules(bond_pad: float | None = None) -> tuple[BondingRule, .
     """Generate bonding rules from all pairs of elements with known covalent radii.
 
     The maximum bonding distance is the sum of covalent radii plus a padding value
-    (default 0.25 A).
-
-    Results are cached (keyed on ``bond_pad``) to avoid regenerating ~4,000
-    rules on every call.
-
-    Args:
-        bond_pad: Bond padding in Angstroms. If None, uses ``config.bond_pad``.
-
-    Returns:
-        Tuple of BondingRule objects (tuple for hashability/caching).
+    (default 0.25 A). Results are cached to avoid regenerating ~4,000 rules on
+    every call.
     """
     from mofforge.utils.config import COVALENT_RADII
 
@@ -81,13 +67,6 @@ def tagged_bonding_rules(
 
     This ensures that tagged atoms (e.g. H!) bond the same way as their
     untagged counterparts (e.g. H).
-
-    Args:
-        rules: Base rules; defaults to default_bonding_rules().
-        r_tag: The R-group tag character; defaults to config.r_tag.
-
-    Returns:
-        Combined list of original + tagged rules.
     """
     if rules is None:
         rules = list(default_bonding_rules(bond_pad=config.bond_pad))
@@ -108,12 +87,6 @@ def _build_rule_lookup(rules: list[BondingRule]) -> dict[tuple[str, str], float]
 
     Keys are normalized (sorted) species pairs so that (A, B) and (B, A)
     map to the same entry.
-
-    Args:
-        rules: List of BondingRule objects.
-
-    Returns:
-        Dict mapping (species_i, species_j) -> max_dist.
     """
     lookup: dict[tuple[str, str], float] = {}
     for rule in rules:
@@ -135,14 +108,6 @@ def _get_max_bond_dist(
     """Look up the maximum bonding distance for a species pair.
 
     Falls back to covalent radii sum + padding if no explicit rule matches.
-
-    Args:
-        species_i: First species.
-        species_j: Second species.
-        rule_lookup: Optional dict from _build_rule_lookup() for O(1) access.
-
-    Returns:
-        Maximum bonding distance, or None if species are unknown.
     """
     if rule_lookup is not None:
         dist = rule_lookup.get((species_i, species_j))
@@ -165,15 +130,6 @@ def infer_bonds(
 
     Uses covalent radii-based bonding rules. For periodic structures,
     also detects bonds across periodic boundaries.
-
-    Args:
-        crystal: The Crystal to infer bonds for.
-        periodic: If True, consider periodic boundary conditions.
-        bonding_rules: Optional custom bonding rules. If None, uses
-            tagged default rules (including R-group species).
-
-    Returns:
-        A new Crystal with the inferred bond graph.
     """
 
     xtal = crystal.copy()
@@ -181,14 +137,12 @@ def infer_bonds(
     if bonding_rules is None:
         bonding_rules = tagged_bonding_rules()
 
-    # Build O(1) lookup dict from rules
     rule_lookup = _build_rule_lookup(bonding_rules)
 
     bonds = nx.Graph()
     n = xtal.n_atoms
     species_list = xtal.species
 
-    # Add all nodes with species attributes
     for i in range(n):
         bonds.add_node(i, species=species_list[i])
 
@@ -248,16 +202,7 @@ def infer_bonds(
 
 
 def remove_bonds(crystal: Crystal) -> Crystal:
-    """Return a Crystal with all bonds removed.
-
-    Node attributes (species) are preserved, but all edges are removed.
-
-    Args:
-        crystal: The Crystal to remove bonds from.
-
-    Returns:
-        A new Crystal with an empty bond graph.
-    """
+    """Return a Crystal with all bonds removed."""
     xtal = crystal.copy()
     species_list = xtal.species
     new_bonds = nx.Graph()
@@ -268,14 +213,7 @@ def remove_bonds(crystal: Crystal) -> Crystal:
 
 
 def drop_cross_pb_bonds(graph: nx.Graph) -> nx.Graph:
-    """Return a copy of the bond graph with cross-boundary bonds removed.
-
-    Args:
-        graph: A bond graph with 'cross_boundary' edge attributes.
-
-    Returns:
-        New graph with only non-cross-boundary edges.
-    """
+    """Return a copy of the bond graph with cross-boundary bonds removed."""
     new_graph = graph.copy()
     edges_to_remove = [
         (u, v) for u, v, d in new_graph.edges(data=True) if d.get("cross_boundary", False)

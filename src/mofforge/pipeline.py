@@ -1,9 +1,4 @@
-"""Multi-step replacement pipeline API.
-
-Provides a fluent interface for chaining multiple find-and-replace
-operations on a crystal structure.  Can also start from scratch by
-building a MOF with :meth:`Pipeline.build_mof`.
-"""
+"""Multi-step replacement pipeline."""
 
 from __future__ import annotations
 
@@ -25,12 +20,7 @@ logger = logging.getLogger("mofforge")
 
 @dataclass
 class PipelineStep:
-    """A single operation in a pipeline.
-
-    Attributes:
-        operation: Type of operation ('replace', 'remove', 'validate').
-        kwargs: Keyword arguments for the operation.
-    """
+    """A single operation in a pipeline."""
 
     operation: str
     kwargs: dict[str, Any] = field(default_factory=dict)
@@ -53,12 +43,7 @@ class Pipeline:
         parent: Crystal | str | Path,
         fragment_path: str | Path | None = None,
     ):
-        """Initialize a pipeline with a parent crystal.
-
-        Args:
-            parent: A Crystal object or path to a CIF file.
-            fragment_path: Optional path to directory containing fragment XYZ files.
-        """
+        """Initialize a pipeline with a parent crystal."""
         if isinstance(parent, (str, Path)):
             parent = Crystal.from_cif(parent)
         self._parent = parent
@@ -73,16 +58,7 @@ class Pipeline:
         replacement: str,
         **kwargs,
     ) -> Pipeline:
-        """Queue a find-and-replace operation.
-
-        Args:
-            query: Query fragment XYZ filename.
-            replacement: Replacement fragment XYZ filename.
-            **kwargs: Additional arguments for replace_pattern.
-
-        Returns:
-            self (for chaining).
-        """
+        """Queue a find-and-replace operation."""
         self._steps.append(
             PipelineStep(
                 operation="replace",
@@ -92,15 +68,7 @@ class Pipeline:
         return self
 
     def remove(self, guest: str, **kwargs) -> Pipeline:
-        """Queue a guest removal operation (replace with nothing).
-
-        Args:
-            guest: Guest fragment XYZ filename.
-            **kwargs: Additional arguments for replace_pattern.
-
-        Returns:
-            self (for chaining).
-        """
+        """Queue a guest removal operation (replace with nothing)."""
         kwargs.setdefault("disconnected_component", True)
         self._steps.append(
             PipelineStep(
@@ -111,14 +79,7 @@ class Pipeline:
         return self
 
     def validate(self, **kwargs) -> Pipeline:
-        """Queue a validation step.
-
-        Args:
-            **kwargs: Arguments for validate_structure.
-
-        Returns:
-            self (for chaining).
-        """
+        """Queue a validation step."""
         self._steps.append(
             PipelineStep(
                 operation="validate",
@@ -128,14 +89,7 @@ class Pipeline:
         return self
 
     def build(self, name: str = "new_xtal") -> Crystal:
-        """Execute all queued operations and return the final crystal.
-
-        Args:
-            name: Name for the final crystal.
-
-        Returns:
-            The modified Crystal.
-        """
+        """Execute all queued operations and return the final crystal."""
         # Reset state so repeated calls don't accumulate duplicates
         self._intermediates = []
         self._reports = []
@@ -152,7 +106,7 @@ class Pipeline:
         )
 
         for i, step in enumerate(self._steps):
-            logger.info("Pipeline step %d/%d: %s", i + 1, len(self._steps), step.operation)
+            logger.debug("Pipeline step %d/%d: %s", i + 1, len(self._steps), step.operation)
 
             if step.operation == "replace":
                 query_name = step.kwargs["query"]
@@ -210,7 +164,6 @@ class Pipeline:
             elif step.operation == "validate":
                 report = validate_structure(current, **step.kwargs)
                 self._reports.append(report)
-                logger.info("Validation: %s", "PASSED" if report.is_valid else "ISSUES FOUND")
 
             self._intermediates.append(current.copy())
 
@@ -223,13 +176,6 @@ class Pipeline:
 
         The last element is the final crystal (same object returned by
         ``build()``).
-
-        Args:
-            name: Name for the final crystal.
-
-        Returns:
-            List of Crystal objects (one per step).  The last element is
-            the final named crystal.
         """
         final = self.build(name)
         # _intermediates already contains a copy after each step; replace the
@@ -244,10 +190,6 @@ class Pipeline:
         """Access validation reports from completed pipeline runs."""
         return self._reports
 
-    # ------------------------------------------------------------------ #
-    # Factory: build a MOF from scratch, then modify
-    # ------------------------------------------------------------------ #
-
     @classmethod
     def build_mof(
         cls,
@@ -261,9 +203,6 @@ class Pipeline:
     ) -> Pipeline:
         """Build a MOF from scratch and return a pipeline for further modifications.
 
-        Combines construction (via TOBACCO or Pormake) with the
-        existing find-and-replace pipeline in a single fluent chain.
-
         Example::
 
             child = (Pipeline.build_mof(
@@ -272,27 +211,6 @@ class Pipeline:
                 .replace(query="BDC.xyz", replacement="NH2-BDC.xyz")
                 .validate()
                 .build(name="functionalized_pcu_MOF"))
-
-        Args:
-            backend: ``"tobacco"`` or ``"pormake"``.
-            topology: Topology name (e.g. ``"pcu"`` or ``"pcu.cif"``).
-            nodes: Paths to node building-block files to register
-                before building.
-            edges: Paths to edge building-block files to register
-                before building.
-            output_dir: Where to write generated CIF files.
-            fragment_path: Optional path to directory containing
-                fragment XYZ files (for downstream replace/remove steps).
-            **backend_kwargs: Passed to :class:`~mofforge.build.MOFBuilder`
-                constructor (e.g. ``tobacco_path="/path/to/tobacco_3.0"``).
-
-        Returns:
-            A :class:`Pipeline` initialised with the built crystal,
-            ready for chaining ``.replace()`` / ``.remove()`` /
-            ``.validate()`` / ``.build()`` calls.
-
-        Raises:
-            RuntimeError: If the MOF build fails.
         """
         from mofforge.build import MOFBuilder
 
@@ -311,7 +229,7 @@ class Pipeline:
             error_msg = "; ".join(result.errors) if result.errors else "unknown error"
             raise RuntimeError(f"MOF build failed: {error_msg}")
 
-        logger.info(
+        logger.debug(
             "MOF built with %s backend (topology=%s, %d output files)",
             backend,
             topology,

@@ -1,14 +1,4 @@
-"""Build configuration: locate external tools and validate paths.
-
-Loads settings from ``mofforge.toml`` (project-local or ``~/.mofforge.toml``)
-and environment variables.  Constructor kwargs take highest priority.
-
-Resolution order (highest wins):
-    1. Explicit keyword argument
-    2. Environment variable (``MOFFORGE_TOBACCO_PATH``, etc.)
-    3. ``./mofforge.toml``  (project-local)
-    4. ``~/.mofforge.toml`` (user-global)
-"""
+"""Build configuration: loads settings from toml, env vars, and kwargs (highest priority wins)."""
 
 from __future__ import annotations
 
@@ -30,11 +20,7 @@ class ConfigError(Exception):
 
 
 def _load_toml(path: Path) -> dict[str, Any]:
-    """Load a TOML file and return it as a nested dict.
-
-    Uses the stdlib ``tomllib`` (Python 3.11+) or falls back to
-    ``tomli`` for 3.10.
-    """
+    """Load a TOML file and return it as a nested dict."""
     try:
         import tomllib  # Python 3.11+
     except ModuleNotFoundError:
@@ -66,12 +52,7 @@ def _find_toml() -> Path | None:
 
 
 def validate_tobacco_path(path: Path) -> list[str]:
-    """Validate that *path* points to a usable TOBACCO installation.
-
-    Returns:
-        A list of human-readable error strings.  An empty list means
-        the path is valid.
-    """
+    """Validate that *path* points to a usable TOBACCO installation."""
     errors: list[str] = []
     path = Path(path).resolve()
 
@@ -96,34 +77,14 @@ def validate_tobacco_path(path: Path) -> list[str]:
 
 @dataclass
 class BuildConfig:
-    """Configuration for MOF builder backends.
-
-    Attributes:
-        tobacco_path: Absolute path to the TOBACCO 3.0 project directory.
-        pormake_output_dir: Default output directory for pormake-generated CIFs.
-    """
+    """Configuration for MOF builder backends."""
 
     tobacco_path: Path | None = None
     pormake_output_dir: Path = field(default_factory=lambda: Path("."))
 
-    # ------------------------------------------------------------------ #
-    # Factory
-    # ------------------------------------------------------------------ #
-
     @classmethod
     def load(cls, **overrides: Any) -> BuildConfig:
-        """Build a :class:`BuildConfig` by merging sources.
-
-        Keyword args override everything.  Then environment variables,
-        then ``./mofforge.toml``, then ``~/.mofforge.toml``.
-
-        Args:
-            **overrides: Any field name can be passed directly
-                (e.g. ``tobacco_path="/some/path"``).
-
-        Returns:
-            A fully resolved :class:`BuildConfig`.
-        """
+        """Build a :class:`BuildConfig` by merging all configuration sources."""
         # --- 1. Start from TOML file (lowest priority) ---
         toml_path = _find_toml()
         toml_data: dict[str, Any] = {}
@@ -158,41 +119,20 @@ class BuildConfig:
             pormake_output_dir=Path(pormake_output_dir) if pormake_output_dir else Path("."),
         )
 
-    # ------------------------------------------------------------------ #
-    # Validation helpers
-    # ------------------------------------------------------------------ #
-
     def resolve_tobacco_path(self) -> Path:
-        """Return a validated TOBACCO path, or raise :class:`ConfigError`.
-
-        Raises:
-            ConfigError: If no path is configured or the path is invalid.
-        """
+        """Return a validated TOBACCO path, or raise :class:`ConfigError`."""
         if self.tobacco_path is None:
-            raise ConfigError(
-                "TOBACCO path is not configured.\n"
-                "Set it in one of:\n"
-                '  1. ~/.mofforge.toml  ->  [backends.tobacco] path = "/path/to/tobacco_3.0"\n'
-                '  2. ./mofforge.toml   ->  [backends.tobacco] path = "/path/to/tobacco_3.0"\n'
-                "  3. Environment variable MOFFORGE_TOBACCO_PATH\n"
-                "  4. MOFBuilder(backend='tobacco', tobacco_path='/path/to/tobacco_3.0')"
-            )
+            raise ConfigError("TOBACCO path is not configured")
 
         errors = validate_tobacco_path(self.tobacco_path)
         if errors:
-            details = "\n  ".join(errors)
+            details = "; ".join(errors)
             raise ConfigError(
-                f"Invalid TOBACCO installation at {self.tobacco_path}:\n  {details}\n\n"
-                "A valid TOBACCO directory must contain:\n"
-                "  - tobacco.py, configuration.py\n"
-                "  - templates/, nodes/, edges/ subdirectories"
+                f"Invalid TOBACCO installation at {self.tobacco_path}: {details}"
             )
 
         return self.tobacco_path
 
     def validate_tobacco(self) -> None:
-        """Raise :class:`ConfigError` if ``tobacco_path`` is invalid.
-
-        Convenience wrapper around :meth:`resolve_tobacco_path`.
-        """
+        """Raise :class:`ConfigError` if ``tobacco_path`` is invalid."""
         self.resolve_tobacco_path()

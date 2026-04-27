@@ -1,23 +1,8 @@
-"""Adsorption site identification in MOF structures.
-
-Provides two strategies for identifying candidate adsorption sites:
-
-1. **Grid-based void detection**: Samples a 3D grid in the unit cell,
-   filters points by minimum distance to framework atoms, and clusters
-   nearby void points to identify pore centers.
-
-2. **Open metal site detection**: Uses the bonding graph to find
-   under-coordinated metal centers and computes placement vectors
-   on the open (uncoordinated) side.
-
-Both strategies return :class:`AdsorptionSite` objects that can be
-passed to :func:`~mofforge.adsorbate.placement.place_adsorbate`.
-"""
+"""Adsorption site identification in MOF structures."""
 
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,33 +10,17 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from mofforge.core.crystal import Crystal
-from mofforge.utils.config import config
+from mofforge.utils.config import clean_species as _clean_species, config
 from mofforge.validation import EXPECTED_COORDINATION
 
 logger = logging.getLogger("mofforge")
-
-_ELEMENT_RE = re.compile(r"^([A-Z][a-z]?)")
-
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
 
 _SITE_TYPES = ("void", "open_metal")
 
 
 @dataclass
 class AdsorptionSite:
-    """A candidate site for placing an adsorbate molecule.
-
-    Attributes:
-        frac_coords: Fractional coordinates in the host crystal's lattice.
-        cart_coords: Cartesian coordinates (Angstroms).
-        site_type: ``"void"`` for pore-center sites, ``"open_metal"`` for
-            under-coordinated metal sites.
-        nearest_framework_dist: Minimum distance to any framework atom (A).
-        metadata: Extra information (e.g. metal species for open-metal sites,
-            estimated pore diameter for void sites, coordination details).
-    """
+    """A candidate site for placing an adsorbate molecule."""
 
     frac_coords: np.ndarray
     cart_coords: np.ndarray
@@ -67,11 +36,6 @@ class AdsorptionSite:
         )
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def find_adsorption_sites(
     crystal: Crystal,
     strategy: str = "void",
@@ -80,32 +44,7 @@ def find_adsorption_sites(
     cluster_tolerance: float = 1.0,
     max_sites: int | None = None,
 ) -> list[AdsorptionSite]:
-    """Identify candidate adsorption sites in a MOF structure.
-
-    Args:
-        crystal: The host MOF crystal (should have bonds inferred for
-            ``"open_metal"`` strategy).
-        strategy: Site-finding strategy:
-            - ``"void"``: Grid-based pore center detection.
-            - ``"open_metal"``: Under-coordinated metal site detection.
-            - ``"both"``: Run both strategies and combine results.
-        min_distance: Minimum distance from framework atoms (A) for void
-            detection.  Points closer than this are excluded.
-        grid_spacing: Grid resolution in Angstroms for void detection.
-        cluster_tolerance: Distance threshold (A) for merging nearby void
-            points into a single site.
-        max_sites: If set, return at most this many sites (sorted by
-            ``nearest_framework_dist``, largest first for voids).
-
-    Returns:
-        List of :class:`AdsorptionSite` objects, sorted by
-        ``nearest_framework_dist`` (descending for voids, ascending for
-        open-metal sites).
-
-    Raises:
-        ValueError: If ``strategy`` is not recognized or the crystal has
-            no atoms.
-    """
+    """Identify candidate adsorption sites in a MOF structure."""
     if crystal.n_atoms == 0:
         raise ValueError("Cannot find adsorption sites in an empty crystal.")
 
@@ -131,7 +70,7 @@ def find_adsorption_sites(
     if max_sites is not None and len(sites) > max_sites:
         sites = sites[:max_sites]
 
-    logger.info(
+    logger.debug(
         "Found %d adsorption site(s) in '%s' (strategy=%s)",
         len(sites),
         crystal.name,
@@ -140,33 +79,16 @@ def find_adsorption_sites(
     return sites
 
 
-# ---------------------------------------------------------------------------
-# Grid-based void detection
-# ---------------------------------------------------------------------------
-
-
 def _find_void_sites(
     crystal: Crystal,
     min_distance: float = 2.5,
     grid_spacing: float = 0.5,
     cluster_tolerance: float = 1.0,
 ) -> list[AdsorptionSite]:
-    """Find pore-center sites using a 3D grid sampling approach.
-
-    Steps:
-        1. Generate a uniform grid of fractional coordinates in [0, 1)^3.
-        2. Convert to Cartesian and compute minimum distance to any
-           framework atom (using a KD-tree on a 3x3x3 supercell to handle
-           periodic boundaries).
-        3. Keep grid points where min_dist >= min_distance.
-        4. Cluster nearby points and take the cluster center (the point
-           with the largest min_dist) as the site location.
-        5. Sort sites by nearest_framework_dist (descending = deepest in pore first).
-    """
+    """Find pore-center sites using a 3D grid sampling approach."""
     lattice = crystal.lattice
     frac = crystal.frac_coords
 
-    # --- Step 1: Generate fractional grid ---
     abc = lattice.abc  # (a, b, c) lengths
     n_a = max(2, int(np.ceil(abc[0] / grid_spacing)))
     n_b = max(2, int(np.ceil(abc[1] / grid_spacing)))
@@ -179,9 +101,7 @@ def _find_void_sites(
     grid_frac = np.array(np.meshgrid(fa, fb, fc, indexing="ij")).reshape(3, -1).T  # (M, 3)
     grid_cart = lattice.get_cartesian_coords(grid_frac)
 
-    # --- Step 2: Build supercell KD-tree for periodic min-distance ---
-    # Replicate framework atoms in a 3x3x3 supercell to capture
-    # periodic images within the search cutoff.
+    # Replicate framework atoms in a 3x3x3 supercell for periodic boundaries
     shifts = np.array(
         [[i, j, k] for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)]
     )  # (27, 3)
@@ -191,7 +111,6 @@ def _find_void_sites(
     tree = cKDTree(supercell_cart)
     min_dists, _ = tree.query(grid_cart)
 
-    # --- Step 3: Filter by minimum distance ---
     mask = min_dists >= min_distance
     if not np.any(mask):
         logger.debug("No void sites found with min_distance=%.2f A", min_distance)
@@ -201,10 +120,8 @@ def _find_void_sites(
     void_cart = grid_cart[mask]
     void_dists = min_dists[mask]
 
-    # --- Step 4: Cluster nearby points ---
     sites = _cluster_void_points(void_frac, void_cart, void_dists, lattice, cluster_tolerance)
 
-    # --- Step 5: Sort by distance (deepest pore first) ---
     sites.sort(key=lambda s: s.nearest_framework_dist, reverse=True)
 
     logger.debug("Found %d void site(s)", len(sites))
@@ -218,13 +135,7 @@ def _cluster_void_points(
     lattice,
     tolerance: float,
 ) -> list[AdsorptionSite]:
-    """Cluster nearby void points and pick the best representative per cluster.
-
-    Uses a greedy approach: iterate points sorted by min_dist (descending),
-    and assign each point to the nearest existing cluster center if within
-    ``tolerance``, otherwise start a new cluster.  The first (highest-dist)
-    point in each cluster becomes the representative.
-    """
+    """Cluster nearby void points and pick the best representative per cluster."""
     if len(frac_coords) == 0:
         return []
 
@@ -262,17 +173,6 @@ def _cluster_void_points(
             )
         )
     return sites
-
-
-# ---------------------------------------------------------------------------
-# Open metal site detection
-# ---------------------------------------------------------------------------
-
-
-def _clean_species(species: str) -> str:
-    """Extract the element symbol from a species label."""
-    m = _ELEMENT_RE.match(species.removesuffix(config.r_tag))
-    return m.group(1) if m else species
 
 
 def _find_open_metal_sites(crystal: Crystal) -> list[AdsorptionSite]:

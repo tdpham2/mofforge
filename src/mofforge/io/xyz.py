@@ -1,4 +1,4 @@
-"""XYZ file I/O with support for R-group tagged atoms (e.g. H!, C!)."""
+"""XYZ file I/O with R-group tag support."""
 
 from __future__ import annotations
 
@@ -8,19 +8,7 @@ import numpy as np
 
 
 def read_xyz(filepath: str | Path) -> tuple[list[str], np.ndarray]:
-    """Read an XYZ file, returning species labels and Cartesian coordinates.
-
-    Species labels may contain '!' suffixes indicating R-group atoms
-    (e.g. 'H!' means a hydrogen used as an R-group marker).
-
-    Args:
-        filepath: Path to the XYZ file.
-
-    Returns:
-        Tuple of (species_list, coords_array) where:
-            - species_list: list of species strings (e.g. ['C', 'H!', 'O'])
-            - coords_array: numpy array of shape (N, 3) in Angstroms
-    """
+    """Read an XYZ file, returning species labels and Cartesian coordinates."""
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"XYZ file not found: {filepath}")
@@ -64,14 +52,7 @@ def write_xyz(
     filepath: str | Path,
     comment: str = "",
 ) -> None:
-    """Write an XYZ file.
-
-    Args:
-        species: List of species strings (may include '!' tags).
-        coords: Numpy array of shape (N, 3) in Angstroms.
-        filepath: Output file path.
-        comment: Optional comment for the second line.
-    """
+    """Write an XYZ file."""
     filepath = Path(filepath)
     n_atoms = len(species)
     if coords.shape != (n_atoms, 3):

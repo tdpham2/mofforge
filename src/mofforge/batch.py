@@ -1,8 +1,4 @@
-"""Batch processing for multiple crystal structures.
-
-Processes multiple parent structures with configurable operations
-from a YAML configuration file, with optional parallel execution.
-"""
+"""Batch processing for multiple crystal structures."""
 
 from __future__ import annotations
 
@@ -27,15 +23,7 @@ logger = logging.getLogger("mofforge")
 
 @dataclass
 class BatchResult:
-    """Result of processing a single structure in a batch.
-
-    Attributes:
-        parent_name: Name of the parent structure.
-        output_path: Path to the output file (if written).
-        success: Whether the operation succeeded.
-        error: Error message if failed.
-        validation: Validation report if validation was performed.
-    """
+    """Result of processing a single structure in a batch."""
 
     parent_name: str
     output_path: str | None = None
@@ -46,17 +34,7 @@ class BatchResult:
 
 @dataclass
 class BatchConfig:
-    """Configuration for a batch processing run.
-
-    Attributes:
-        parent_paths: List of glob patterns or file paths for parent structures.
-        operations: List of operation dicts.
-        output_dir: Output directory for results.
-        output_format: Output file format ('cif' or 'xyz').
-        naming: Output naming template (e.g. '{parent_name}_modified').
-        parallel: Number of parallel workers (0 = sequential).
-        moiety_path: Path to fragment XYZ files.
-    """
+    """Configuration for a batch processing run."""
 
     parent_paths: list[str] = field(default_factory=list)
     operations: list[dict] = field(default_factory=list)
@@ -94,12 +72,6 @@ class BatchConfig:
               naming: "{parent_name}_functionalized"
             parallel: 4
             moiety_path: ./data/moieties
-
-        Args:
-            filepath: Path to the YAML config file.
-
-        Returns:
-            BatchConfig object.
         """
         with open(filepath, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
@@ -152,6 +124,9 @@ def _resolve_parent_paths(patterns: list[str]) -> list[Path]:
     return paths
 
 
+_VALID_OP_TYPES = ("replace", "remove", "validate")
+
+
 def _process_single(
     parent_path: Path,
     config: BatchConfig,
@@ -167,12 +142,8 @@ def _process_single(
         for op in config.operations:
             op_type = op.get("type", "")
 
-            _VALID_OP_TYPES = ("replace", "remove", "validate")
             if op_type not in _VALID_OP_TYPES:
-                raise ValueError(
-                    f"Unknown operation type '{op_type}' in batch config. "
-                    f"Must be one of: {', '.join(_VALID_OP_TYPES)}."
-                )
+                raise ValueError(f"unknown operation type '{op_type}'")
 
             if op_type == "replace":
                 query_name = op.get("query")
@@ -220,7 +191,7 @@ def _process_single(
             current.write_cif(output_path)
         result.output_path = str(output_path)
 
-        logger.info("Processed '%s' -> '%s'", parent_name, output_path)
+        logger.debug("Processed '%s' -> '%s'", parent_name, output_path)
 
     except Exception as e:
         result.success = False
@@ -231,14 +202,7 @@ def _process_single(
 
 
 def run_batch(config_path: str | Path) -> list[BatchResult]:
-    """Run batch processing from a YAML configuration file.
-
-    Args:
-        config_path: Path to the YAML config file.
-
-    Returns:
-        List of BatchResult objects, one per parent structure.
-    """
+    """Run batch processing from a YAML configuration file."""
     config = BatchConfig.from_yaml(config_path)
     parent_paths = _resolve_parent_paths(config.parent_paths)
 
@@ -246,7 +210,7 @@ def run_batch(config_path: str | Path) -> list[BatchResult]:
         logger.warning("No parent structures found.")
         return []
 
-    logger.info("Batch processing %d structures", len(parent_paths))
+    logger.debug("Batch processing %d structures", len(parent_paths))
     results: list[BatchResult] = []
 
     if config.parallel > 1:
@@ -263,6 +227,6 @@ def run_batch(config_path: str | Path) -> list[BatchResult]:
     # Summary
     successes = sum(1 for r in results if r.success)
     failures = sum(1 for r in results if not r.success)
-    logger.info("Batch complete: %d succeeded, %d failed", successes, failures)
+    logger.debug("Batch complete: %d succeeded, %d failed", successes, failures)
 
     return results

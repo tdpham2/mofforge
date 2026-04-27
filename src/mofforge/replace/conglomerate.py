@@ -1,10 +1,4 @@
-"""Periodic boundary reassembly for cross-PB substructures.
-
-When a matched substructure spans periodic boundaries, its atoms may be
-scattered across the unit cell. Reassembly shifts the disconnected
-components so they form a contiguous cluster, which is necessary for
-correct SVD alignment.
-"""
+"""Periodic boundary reassembly for cross-PB substructures."""
 
 from __future__ import annotations
 
@@ -34,12 +28,6 @@ def reassemble(crystal: Crystal) -> Crystal:
             - Compute nearest image: n_dx = nearest_image(dx)
             - Shift all atoms in the unshifted component by (dx - n_dx).
         6. Repeat until all components are shifted.
-
-    Args:
-        crystal: The Crystal substructure to reassemble.
-
-    Returns:
-        A new Crystal with shifted coordinates forming a contiguous cluster.
     """
     xtal = crystal.copy()
 
