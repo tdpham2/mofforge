@@ -1,8 +1,4 @@
-"""Post-replacement structure validation.
-
-Checks for steric clashes, unusual bond lengths, coordination geometry
-issues, and charge balance after crystal modification.
-"""
+"""Post-replacement structure validation."""
 
 from __future__ import annotations
 
@@ -40,19 +36,7 @@ EXPECTED_COORDINATION: dict[str, tuple[int, int]] = {
 
 @dataclass
 class ValidationReport:
-    """Results of structure validation.
-
-    Attributes:
-        steric_clashes: List of (atom_i, atom_j, distance) tuples for
-            atoms closer than expected.
-        unusual_bonds: List of (atom_i, atom_j, actual_dist, expected_dist)
-            for bonds with unusual lengths.
-        coordination_issues: List of (atom_i, species, coord_number, expected_range)
-            for atoms with unexpected coordination numbers.
-        charge_balance: Net charge (None if not computed).
-        warnings: List of warning messages.
-        is_valid: True if no serious issues found.
-    """
+    """Results of structure validation."""
 
     steric_clashes: list[tuple[int, int, float]] = field(default_factory=list)
     unusual_bonds: list[tuple[int, int, float, float]] = field(default_factory=list)
@@ -112,20 +96,7 @@ def validate_structure(
     clash_tolerance: float = 0.5,
     bond_tolerance: float = 0.3,
 ) -> ValidationReport:
-    """Validate a crystal structure after modification.
-
-    Args:
-        crystal: The Crystal to validate.
-        check_clashes: If True, check for steric clashes.
-        check_bonds: If True, check for unusual bond lengths.
-        check_coordination: If True, check metal coordination numbers.
-        check_charges: If True, check charge balance.
-        clash_tolerance: Distance below sum of vdW radii to flag (Angstroms).
-        bond_tolerance: Fractional deviation from expected bond length to flag.
-
-    Returns:
-        ValidationReport with all findings.
-    """
+    """Validate a crystal structure after modification."""
     report = ValidationReport()
 
     if crystal.n_atoms == 0:
@@ -144,7 +115,7 @@ def validate_structure(
     if check_charges:
         _check_charges(crystal, report)
 
-    logger.info("Validation: %s", "PASSED" if report.is_valid else "ISSUES FOUND")
+    logger.debug("Validation: %s", "PASSED" if report.is_valid else "ISSUES FOUND")
     return report
 
 

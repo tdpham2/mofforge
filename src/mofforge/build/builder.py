@@ -1,25 +1,4 @@
-"""MOFBuilder: unified facade for constructing MOFs.
-
-Provides a single, backend-agnostic interface for building MOFs from
-topology + building blocks.  Delegates to :class:`TobaccoBackend` or
-:class:`PormakeBackend` depending on the ``backend`` parameter.
-
-Example::
-
-    from mofforge.build import MOFBuilder
-
-    # TOBACCO
-    builder = MOFBuilder(backend="tobacco")
-    builder.list_topologies()
-    result = builder.build(topology="pcu")
-    crystal = result.crystal
-
-    # Pormake
-    builder = MOFBuilder(backend="pormake")
-    builder.add_node("path/to/node.xyz")
-    builder.add_edge("path/to/edge.xyz")
-    result = builder.build(topology="pcu", output_dir="./output")
-"""
+"""Unified facade for MOF construction."""
 
 from __future__ import annotations
 
@@ -36,25 +15,7 @@ _BACKENDS = ("tobacco", "pormake")
 
 
 class MOFBuilder:
-    """Unified interface for building MOFs from topology + building blocks.
-
-    Args:
-        backend: ``"tobacco"`` or ``"pormake"``.
-        **kwargs: Backend-specific options.  Notable keys:
-
-            - ``tobacco_path``: Path to the TOBACCO installation directory
-              (overrides ``mofforge.toml`` / env var).
-            - ``output_dir``: Default output directory for generated CIFs.
-            - ``bb_dir``: Directory for storing building-block files
-              (pormake only).
-            - ``pormake_output_dir``: Alias for ``output_dir`` when using
-              pormake.
-
-    Raises:
-        ValueError: If *backend* is not recognised.
-        ConfigError: If required configuration (e.g. TOBACCO path) is
-            missing or invalid.
-    """
+    """Unified interface for building MOFs from topology + building blocks."""
 
     def __init__(self, backend: str = "tobacco", **kwargs: Any) -> None:
         if backend not in _BACKENDS:
@@ -72,7 +33,7 @@ class MOFBuilder:
 
             tobacco_path = kwargs.get("tobacco_path") or cfg.tobacco_path
             if tobacco_path is None:
-                cfg.resolve_tobacco_path()  # raises ConfigError with instructions
+                tobacco_path = cfg.resolve_tobacco_path()  # raises ConfigError if unconfigured
             self._backend: BuilderBackend = TobaccoBackend(tobacco_path)  # type: ignore[assignment]
 
         elif backend == "pormake":
@@ -86,10 +47,6 @@ class MOFBuilder:
             bb_dir = kwargs.get("bb_dir")
             self._backend = PormakeBackend(output_dir=output_dir, bb_dir=bb_dir)  # type: ignore[assignment]
 
-    # ------------------------------------------------------------------ #
-    # Properties
-    # ------------------------------------------------------------------ #
-
     @property
     def backend(self) -> BuilderBackend:
         """The underlying backend instance."""
@@ -100,10 +57,6 @@ class MOFBuilder:
         """Short name of the active backend."""
         return self._backend_name
 
-    # ------------------------------------------------------------------ #
-    # Topology
-    # ------------------------------------------------------------------ #
-
     def list_topologies(self) -> list[str]:
         """Return names of all available topologies."""
         return self._backend.list_topologies()
@@ -112,29 +65,21 @@ class MOFBuilder:
         """Return a human-readable description of a topology."""
         return self._backend.describe_topology(name)
 
-    # ------------------------------------------------------------------ #
-    # Building blocks
-    # ------------------------------------------------------------------ #
-
     def add_node(
         self,
         source: str | Path,
         name: str | None = None,
         connection_points: list[int] | None = None,
     ) -> None:
-        """Register a node (metal cluster / SBU) building block.
-
-        Args:
-            source: Path to a CIF or XYZ file, or a SMILES string.
-            name: Optional label.  Defaults to the filename stem or
-                the first 20 characters of the SMILES.
-            connection_points: Atom indices for connection sites
-                (required for SMILES-based blocks in pormake).
-        """
+        """Register a node (metal cluster / SBU) building block."""
         block = self._make_block("node", source, name, connection_points)
+        result = self._backend.add_building_block(block)
+        if not result.get("success", False):
+            raise ValueError(
+                f"Failed to register node '{block.name}': "
+                f"{result.get('error', 'unknown error')}"
+            )
         self._nodes.append(block)
-        # Also register with the backend for file-management tracking
-        self._backend.add_building_block(block)
 
     def add_edge(
         self,
@@ -142,16 +87,15 @@ class MOFBuilder:
         name: str | None = None,
         connection_points: list[int] | None = None,
     ) -> None:
-        """Register an edge (organic linker) building block.
-
-        Args:
-            source: Path to a CIF or XYZ file, or a SMILES string.
-            name: Optional label.
-            connection_points: Atom indices for connection sites.
-        """
+        """Register an edge (organic linker) building block."""
         block = self._make_block("edge", source, name, connection_points)
+        result = self._backend.add_building_block(block)
+        if not result.get("success", False):
+            raise ValueError(
+                f"Failed to register edge '{block.name}': "
+                f"{result.get('error', 'unknown error')}"
+            )
         self._edges.append(block)
-        self._backend.add_building_block(block)
 
     def list_nodes(self) -> list[str]:
         """List registered node building blocks."""
@@ -189,27 +133,13 @@ class MOFBuilder:
             self._edges.clear()
         return result
 
-    # ------------------------------------------------------------------ #
-    # Build
-    # ------------------------------------------------------------------ #
-
     def build(
         self,
         topology: str,
         output_dir: str | Path = ".",
         **options: Any,
     ) -> BuildResult:
-        """Build a MOF from topology + registered building blocks.
-
-        Args:
-            topology: Topology name (e.g. ``"pcu"`` or ``"pcu.cif"``).
-            output_dir: Where to write the generated CIF files.
-            **options: Backend-specific options (e.g. ``parallel=True``
-                for TOBACCO, ``accuracy=10`` for pormake).
-
-        Returns:
-            A :class:`BuildResult` with the outcome.
-        """
+        """Build a MOF from the given topology and registered building blocks."""
         topo = Topology(name=topology)
         return self._backend.build(
             topology=topo,
@@ -218,10 +148,6 @@ class MOFBuilder:
             output_dir=Path(output_dir),
             **options,
         )
-
-    # ------------------------------------------------------------------ #
-    # Management / Configuration
-    # ------------------------------------------------------------------ #
 
     def status(self) -> dict[str, Any]:
         """Return overall status of the active backend."""
@@ -249,10 +175,6 @@ class MOFBuilder:
         return self._backend.copy_from_database(
             role=role, names=names, source=source, dry_run=dry_run
         )
-
-    # ------------------------------------------------------------------ #
-    # Private helpers
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _make_block(
