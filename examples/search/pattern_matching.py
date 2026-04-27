@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 1: Pattern Matching
+"""Pattern Matching
 
 Demonstrates finding a chemical substructure (p-phenylene linker fragment)
 within a MOF crystal structure (IRMOF-1).
@@ -7,12 +7,12 @@ within a MOF crystal structure (IRMOF-1).
 This is the most basic operation: search only, no replacement.
 
 Input files:
-    crystals/IRMOF-1.cif        - Parent MOF crystal structure
-    moieties/p-phenylene.xyz    - Query fragment (p-phenylene ring)
+    data/crystals/IRMOF-1.cif        - Parent MOF crystal structure
+    data/moieties/p-phenylene.xyz    - Query fragment (p-phenylene ring)
 
 Usage:
-    python pattern_matching.py
-    python pattern_matching.py --crystal my_mof.cif --query my_fragment.xyz
+    python search/pattern_matching.py
+    python search/pattern_matching.py --crystal my_mof.cif --query my_fragment.xyz
 """
 
 import argparse
@@ -20,10 +20,11 @@ from pathlib import Path
 
 from mofforge import Crystal, infer_bonds, fragment, find_pattern
 
-# Default paths (relative to this script)
+# Default paths (relative to this script, data is at the examples root)
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_search(crystal_path: str, query_name: str, fragment_path: str):

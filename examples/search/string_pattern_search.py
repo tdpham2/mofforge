@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 8: SMARTS-like Pattern Matching
+"""SMARTS-like Pattern Matching
 
 Demonstrates searching for substructures using string-based chemical
 patterns instead of XYZ file input.
@@ -12,7 +12,7 @@ Supported syntax:
     - Ring closure: C1-C-C-C-C-C-1 (digit marks ring start/end)
 
 Usage:
-    python string_pattern_search.py
+    python search/string_pattern_search.py
 """
 
 from pathlib import Path
@@ -21,7 +21,8 @@ from mofforge import Crystal, infer_bonds
 from mofforge.smarts import parse_smarts, smarts_search
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
 
 
 def run_smarts_examples():

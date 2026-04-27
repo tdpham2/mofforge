@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 6: Introduce Missing-Linker Defects
+"""Introduce Missing-Linker Defects
 
 Demonstrates engineering missing-linker defects into a MOF by:
     1. Searching for BDC linkers in UiO-66
@@ -8,13 +8,13 @@ Demonstrates engineering missing-linker defects into a MOF by:
        capping the exposed carboxylate groups with formate ions
 
 Input files:
-    crystals/UiO-66.cif         - Parent MOF
-    moieties/BDC.xyz            - Query (full BDC linker with !-tagged core)
-    moieties/formate_caps.xyz   - Replacement (pair of formate ions)
+    data/crystals/UiO-66.cif         - Parent MOF
+    data/moieties/BDC.xyz            - Query (full BDC linker with !-tagged core)
+    data/moieties/formate_caps.xyz   - Replacement (pair of formate ions)
 
 Usage:
-    python defect_engineering.py
-    python defect_engineering.py --loc 0 5 --output defected.cif
+    python modify/defect_engineering.py
+    python modify/defect_engineering.py --loc 0 5 --output defected.cif
 """
 
 import argparse
@@ -23,8 +23,9 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_missing_linker_defect(locations: list[int], output: str, fragment_path: str):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 4: Structure Repair — Correct Missing Hydrogen Atoms
+"""Structure Repair — Correct Missing Hydrogen Atoms
 
 Demonstrates repairing a crystal structure that has missing hydrogen atoms
 on its linkers — a common artifact of X-ray crystallography.
@@ -9,13 +9,13 @@ the complete ring with H atoms properly positioned. This is a case where
 the replacement is a superset of the query (no '!' masking needed).
 
 Input files:
-    crystals/IRMOF-1_noH.cif           - Parent MOF with missing H atoms
-    moieties/1,4-C-phenylene_noH.xyz    - Query (bare phenylene, no H)
-    moieties/1,4-C-phenylene.xyz        - Replacement (phenylene with H)
+    data/crystals/IRMOF-1_noH.cif           - Parent MOF with missing H atoms
+    data/moieties/1,4-C-phenylene_noH.xyz    - Query (bare phenylene, no H)
+    data/moieties/1,4-C-phenylene.xyz        - Replacement (phenylene with H)
 
 Usage:
-    python structure_repair.py
-    python structure_repair.py --output simulation_ready.cif
+    python repair/structure_repair.py
+    python repair/structure_repair.py --output simulation_ready.cif
 """
 
 import argparse
@@ -24,8 +24,9 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_correct_missing_h(output: str, fragment_path: str):
