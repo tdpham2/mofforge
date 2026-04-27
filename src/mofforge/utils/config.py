@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -202,10 +203,7 @@ class MofforgeConfig:
         clean = species.removesuffix(self.r_tag)
         if clean in COVALENT_RADII:
             return COVALENT_RADII[clean]
-        raise ValueError(
-            f"No covalent radius for species '{clean}'. "
-            f"Add it to mofforge.utils.config.COVALENT_RADII."
-        )
+        raise ValueError(f"No covalent radius for species '{clean}'.")
 
     def get_vdw_radius(self, species: str) -> float:
         """Get van der Waals radius for a species, stripping R-group tag if present."""
@@ -232,13 +230,19 @@ def set_paths(
     crystals: str | Path | None = None,
     moieties: str | Path | None = None,
 ) -> None:
-    """Update global data directory paths.
-
-    Args:
-        crystals: Path to directory containing crystal CIF files.
-        moieties: Path to directory containing moiety XYZ files.
-    """
+    """Update global data directory paths."""
     if crystals is not None:
         config.crystal_path = Path(crystals)
     if moieties is not None:
         config.moiety_path = Path(moieties)
+
+
+# Regex to extract bare element symbol (e.g. "Zn2+" -> "Zn", "H!" -> "H")
+_ELEMENT_RE = re.compile(r"^([A-Z][a-z]?)")
+
+
+def clean_species(species: str) -> str:
+    """Extract the bare element symbol from a species label (e.g. ``'H!'`` -> ``'H'``)."""
+    cleaned = species.removesuffix(config.r_tag)
+    m = _ELEMENT_RE.match(cleaned)
+    return m.group(1) if m else cleaned
