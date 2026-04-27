@@ -21,7 +21,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-    "pymatgen>=2024.1.1,<2027",
+    "pymatgen",
     "networkx>=3.0",
     "numpy>=1.24",
     "scipy>=1.10",
@@ -35,6 +35,9 @@ dependencies = [
 vis = [
     "playwright",
 ]
+chem = [
+    "rdkit",
+]
 build = [
     "pormake",
 ]
@@ -42,7 +45,7 @@ mcp = [
     "mcp[cli]>=1.0",
 ]
 all = [
-    "mofforge[vis,build,mcp]",
+    "mofforge[vis,chem,build,mcp]",
 ]
 dev = [
     "pytest>=7.0",
