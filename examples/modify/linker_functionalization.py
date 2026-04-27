@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 2: Linker Functionalization
+"""Linker Functionalization
 
 Demonstrates generating a hypothetical mixed-linker MOF by decorating
 selected BDC linkers in IRMOF-1 with acetylamido functional groups.
@@ -8,13 +8,13 @@ The query uses a '!'-tagged hydrogen to mark the replacement site.
 The replacement fragment has the acetylamido group in place of that hydrogen.
 
 Input files:
-    crystals/IRMOF-1.cif                    - Parent MOF
-    moieties/2-!-p-phenylene.xyz            - Query (phenylene with H! tag)
-    moieties/2-acetylamido-p-phenylene.xyz   - Replacement (phenylene with acetylamido)
+    data/crystals/IRMOF-1.cif                    - Parent MOF
+    data/moieties/2-!-p-phenylene.xyz            - Query (phenylene with H! tag)
+    data/moieties/2-acetylamido-p-phenylene.xyz   - Replacement (phenylene with acetylamido)
 
 Usage:
-    python linker_functionalization.py
-    python linker_functionalization.py --nb-loc 6 --output my_mof.cif
+    python modify/linker_functionalization.py
+    python modify/linker_functionalization.py --nb-loc 6 --output my_mof.cif
 """
 
 import argparse
@@ -23,8 +23,9 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_hypothetical_mof(crystal_path: str, nb_loc: int, output: str, fragment_path: str):

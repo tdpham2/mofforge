@@ -1,8 +1,4 @@
-"""SVD-based Procrustes alignment for substructure replacement.
-
-Aligns a replacement fragment onto the parent crystal's coordinate system
-using the orthogonal Procrustes solution via Singular Value Decomposition.
-"""
+"""SVD-based Procrustes alignment for substructure replacement."""
 
 from __future__ import annotations
 
@@ -21,17 +17,7 @@ logger = logging.getLogger("mofforge")
 
 @dataclass
 class Alignment:
-    """Stores the rigid-body transformation for aligning replacement to parent.
-
-    The transformation is applied as:
-        X_new = rotation @ (X + shift_pre) + shift_post
-
-    Attributes:
-        rotation: (3, 3) rotation matrix.
-        shift_pre: (3,) pre-rotation translation (centers replacement to origin).
-        shift_post: (3,) post-rotation translation (moves to parent position).
-        error: Frobenius norm of the alignment residual.
-    """
+    """The transformation is applied as: X_new = rotation @ (X + shift_pre) + shift_post."""
 
     rotation: np.ndarray
     shift_pre: np.ndarray
@@ -45,34 +31,11 @@ def get_r2p_alignment(
     r2p: dict[int, int],
     q2p: dict[int, int],
 ) -> Alignment:
-    """Compute the optimal rigid-body alignment of replacement onto parent.
-
-    Uses the SVD solution to the orthogonal Procrustes problem:
-        min ||R @ X_r - X_p||_F  subject to R^T R = I
-
-    The parent substructure is first conglomerated to handle fragments
-    that span periodic boundaries.
-
-    Args:
-        replacement: The replacement fragment Crystal.
-        parent: The parent Crystal.
-        r2p: Mapping from replacement atom indices to parent atom indices
-            (atoms used for alignment).
-        q2p: Mapping from query atom indices to parent atom indices
-            (all matched atoms; used for conglomeration).
-
-    Returns:
-        Alignment with rotation matrix, translations, and error.
-
-    Raises:
-        ValueError: If there are fewer than 2 alignment points, or if
-            the replacement or parent have no atoms.
-    """
+    """Compute the optimal rigid-body alignment of replacement onto parent."""
     n_align = len(r2p)
     if n_align < 2:
         raise ValueError(
-            f"Need at least 2 alignment points for SVD alignment, got {n_align}. "
-            "The replacement fragment must share at least 2 atoms with the query."
+            f"Need at least 2 alignment points, got {n_align}."
         )
     if replacement.n_atoms == 0 or parent.n_atoms == 0:
         raise ValueError("Parent and replacement must each have at least 1 atom.")
@@ -107,7 +70,7 @@ def get_r2p_alignment(
     U, _S, Vt = svd(H)
     # Correct for possible reflection: ensure det(R) = +1 (proper rotation)
     d = np.linalg.det(Vt.T @ U.T)
-    correction = np.diag([1.0, 1.0, np.sign(d)])
+    correction = np.diag([1.0, 1.0, 1.0 if d >= 0 else -1.0])
     rotation = Vt.T @ correction @ U.T
 
     # Alignment error
@@ -126,19 +89,7 @@ def apply_alignment(
     parent: Crystal,
     alignment: Alignment,
 ) -> Crystal:
-    """Apply the computed alignment to place replacement into parent's coordinate system.
-
-    Transforms replacement's Cartesian coordinates and converts back to
-    fractional coordinates in the parent's lattice.
-
-    Args:
-        replacement: The replacement fragment Crystal.
-        parent: The parent Crystal (provides the target lattice).
-        alignment: The Alignment to apply.
-
-    Returns:
-        New Crystal with replacement atoms positioned in parent's lattice.
-    """
+    """Apply the computed alignment to place replacement into parent's coordinate system."""
     # Get replacement in Cartesian
     cart = replacement.cart_coords.T  # (3, N)
 

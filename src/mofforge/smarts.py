@@ -1,7 +1,4 @@
-"""SMARTS-like pattern matching for chemical substructure queries.
-
-Provides a simplified SMARTS-like syntax for specifying query patterns
-as strings instead of requiring XYZ file input.
+"""SMARTS-like pattern matching for crystal substructure queries.
 
 Supported syntax:
     - Element symbols: C, N, O, Zn, etc.
@@ -44,18 +41,7 @@ _TOKEN_RE = re.compile(
 
 
 def parse_smarts(pattern: str) -> nx.Graph:
-    """Parse a SMARTS-like pattern string into a NetworkX query graph.
-
-    Args:
-        pattern: SMARTS-like pattern string (e.g. "Zn-O-C").
-
-    Returns:
-        NetworkX Graph with 'species' node attributes.
-        Wildcard atoms get species='*'.
-
-    Raises:
-        ValueError: If the pattern is invalid.
-    """
+    """Parse a SMARTS-like pattern string into a NetworkX query graph."""
     graph = nx.Graph()
     atom_idx = 0
     last_atom: int | None = None
@@ -145,33 +131,14 @@ def smarts_search(
 ) -> MatchResult:
     """Search a parent crystal using a SMARTS-like pattern string.
 
-    This is an alternative to loading a query from an XYZ file.
-    The pattern is parsed into a query graph and matched against
-    the parent's bond graph.
-
-    .. note::
-        The returned ``MatchResult`` uses a dummy empty ``query`` Crystal
-        and is intended for **inspection only** (e.g. counting matches,
-        extracting matched atoms). It **cannot** be passed to
-        ``replace_pattern()`` — use a proper XYZ-loaded query for that.
-
-    Args:
-        pattern: SMARTS-like pattern string.
-        parent: The crystal structure to search in.
-        disconnected_component: If True, search for exact isolated matches.
-
-    Returns:
-        MatchResult object with isomorphism results.
+    The pattern is parsed into a query graph and matched against the parent's bond graph.
     """
     from collections import defaultdict
 
     from networkx.algorithms.isomorphism import GraphMatcher
 
     if parent.n_bonds == 0:
-        raise ValueError(
-            "The parent structure must have bonds. "
-            "Use infer_bonds(crystal, periodic=True) to create them."
-        )
+        raise ValueError("Parent structure has no bonds.")
 
     query_graph = parse_smarts(pattern)
     has_wildcards = any(d.get("species") == "*" for _, d in query_graph.nodes(data=True))

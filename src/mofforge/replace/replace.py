@@ -1,8 +1,4 @@
-"""Pattern replacement pipeline.
-
-Orchestrates the full find-and-replace workflow: from search results
-to aligned fragment installation, bond reconstruction, and cleanup.
-"""
+"""Pattern replacement pipeline for crystal substructures."""
 
 from __future__ import annotations
 
@@ -30,13 +26,7 @@ AtomMapping = dict[int, int]
 
 @dataclass
 class Installation:
-    """A prepared replacement ready to be installed into the parent.
-
-    Attributes:
-        aligned_replacement: The replacement Crystal, already positioned.
-        q2p: Mapping from query atom indices to parent atom indices.
-        r2p: Mapping from replacement atom indices to parent atom indices.
-    """
+    """A prepared replacement ready to be installed into the parent."""
 
     aligned_replacement: Crystal
     q2p: dict[int, int]
@@ -47,18 +37,7 @@ def _find_query_in_replacement(
     match: MatchResult,
     replacement: Crystal,
 ) -> dict[int, int]:
-    """Find the correspondence between query (unmasked) and replacement atoms.
-
-    Searches for the unmasked portion of the query inside the replacement
-    to determine which replacement atoms correspond to which query atoms.
-
-    Args:
-        match: The MatchResult containing the query.
-        replacement: The replacement fragment.
-
-    Returns:
-        Dict mapping query atom index -> replacement atom index (q2r).
-    """
+    """Find the correspondence between query (unmasked) and replacement atoms."""
     # Count non-masked atoms in query
     r_indices = set(anchor_indices(match.query.species))
     nb_not_masked = sum(1 for i in range(match.query.n_atoms) if i not in r_indices)
@@ -80,8 +59,7 @@ def _find_query_in_replacement(
 
     if q_in_r.nb_locations() == 0:
         raise ValueError(
-            f"Could not find unmasked query atoms in replacement '{replacement.name}'. "
-            "The replacement must contain the unmasked portion of the query."
+            f"Query atoms not found in replacement '{replacement.name}'."
         )
 
     # Take the first isomorphism.
@@ -104,19 +82,7 @@ def optimal_replacement(
     loc_id: int,
     ori_ids: list[int] | None = None,
 ) -> Installation:
-    """Find the best orientation at a location by minimizing alignment error.
-
-    Args:
-        match: The MatchResult results.
-        replacement: The replacement Crystal.
-        q2r: Query-to-replacement atom mapping.
-        loc_id: Location index.
-        ori_ids: List of orientation indices to evaluate. If None,
-            evaluates all orientations at this location and picks the best.
-
-    Returns:
-        Installation with the best-aligned replacement.
-    """
+    """Find the best orientation at a location by minimizing alignment error."""
     isomorphisms = match.isomorphisms
     parent = match.parent
 
@@ -152,10 +118,7 @@ def optimal_replacement(
 
     # Check if any alignment succeeded
     if best_alignment.error == float("inf"):
-        raise ValueError(
-            f"All alignment attempts failed for location {loc_id}. "
-            "The replacement fragment may be incompatible with the parent at this location."
-        )
+        raise ValueError(f"Alignment failed for location {loc_id}.")
 
     # Apply the best alignment
     aligned_rep = apply_alignment(replacement, parent, best_alignment)
@@ -186,14 +149,6 @@ def install_replacements(
         3. Accumulate obsolete (matched query) atoms for deletion.
 
     After all installations, delete obsolete atoms.
-
-    Args:
-        parent: The parent Crystal.
-        installations: List of Installation objects.
-        name: Name for the resulting Crystal.
-
-    Returns:
-        New Crystal with replacements installed.
     """
     # Start with a copy of the parent (clear symmetry for combination)
     child = parent.copy()
@@ -256,17 +211,7 @@ def effect_replacements(
     configs: list[tuple[int, int]],
     name: str,
 ) -> Crystal:
-    """Orchestrate replacement for given (location, orientation) configurations.
-
-    Args:
-        match: The MatchResult results.
-        replacement: The replacement Crystal.
-        configs: List of (location_id, orientation_id) tuples.
-        name: Name for the resulting Crystal.
-
-    Returns:
-        New Crystal with replacements applied.
-    """
+    """Orchestrate replacement for given (location, orientation) configurations."""
     # Find query-to-replacement correspondence
     if replacement.n_atoms > 0:
         q2r = _find_query_in_replacement(match, replacement)
@@ -337,26 +282,6 @@ def replace_pattern(
         - ``nb_loc=N``: N random locations.
         - ``loc=[...]``: specific locations.
         - ``loc=[...], ori=[...]``: specific location+orientation pairs.
-
-    Args:
-        match: The MatchResult for a pattern in the parent crystal.
-        replacement: The fragment to use for replacement. If None, matched
-            substructures are deleted.
-        random: If True, select random orientations.
-        nb_loc: Number of random locations to replace at. 0 = all.
-        loc: Specific location indices for replacement.
-        ori: Specific orientation indices (one per location in ``loc``).
-        name: Name for the generated Crystal.
-        verbose: If True, log info about replacements.
-        remove_duplicates: If True, remove overlapping atoms of same species.
-        periodic_boundaries: If True, use PBC for duplicate checking.
-        reinfer_bonds: If True, re-infer bonds after replacement.
-        wrap: If True, wrap coordinates to [0, 1) and check cell bounds.
-        auto_supercell: If True, automatically create supercell when
-            replacement is too large instead of raising an error.
-
-    Returns:
-        New Crystal with the specified modifications.
     """
     # Handle None replacement
     if replacement is None:
@@ -404,7 +329,7 @@ def replace_pattern(
         if len(loc) != len(ori):
             raise ValueError("One orientation per location required")
         # Validate location and orientation indices
-        for idx, (l, o) in enumerate(zip(loc, ori)):
+        for l, o in zip(loc, ori):
             if l < 0 or l >= n_locations:
                 raise ValueError(f"Location index {l} out of range (0..{n_locations - 1}).")
             if o is not None and (o < 0 or o >= ori_counts[l]):
@@ -433,10 +358,8 @@ def replace_pattern(
             if verbose:
                 logger.info("Replacing: optimal ori @ loc=%s", loc)
 
-    # Drop charges warning (if parent had charges, they're not transferred)
-    # In pymatgen, partial charges are stored differently, so we just note this
-    if any(hasattr(site, "charge") and site.charge != 0 for site in match.parent.structure):
-        logger.warning("Dropping charges from parent during replacement.")
+    # Note: pymatgen stores partial charges on Species objects, not on
+    # PeriodicSite.  Charge transfer during replacement is not supported.
 
     # Generate configuration tuples
     configs = [(loc[i], ori[i]) for i in range(len(loc))]
@@ -454,10 +377,7 @@ def replace_pattern(
             if auto_supercell:
                 child = _handle_supercell(match, replacement, configs, name)
             else:
-                raise ValueError(
-                    "Installed replacement fragment too large for the unit cell. "
-                    "Replicate the parent and try again, or use auto_supercell=True."
-                )
+                raise ValueError("Replacement too large for unit cell.")
 
         # Wrap coordinates
         wrapped_frac = wrap_coords(child.frac_coords)
@@ -478,19 +398,7 @@ def _remove_duplicates(
     periodic: bool = True,
     tolerance: float = 0.01,
 ) -> Crystal:
-    """Remove duplicate atoms (same species, overlapping positions).
-
-    Uses pymatgen's periodic neighbor search (for periodic structures) or
-    scipy's cKDTree (for non-periodic) to avoid O(N^2) pairwise comparison.
-
-    Args:
-        crystal: Crystal to deduplicate.
-        periodic: If True, consider periodic images.
-        tolerance: Distance tolerance in Angstroms.
-
-    Returns:
-        New Crystal with duplicates removed.
-    """
+    """Remove duplicate atoms (same species, overlapping positions)."""
     n = crystal.n_atoms
     if n == 0:
         return crystal
@@ -524,7 +432,7 @@ def _remove_duplicates(
                 removed.add(max(i, j))
 
     if removed:
-        logger.info("Removed %d duplicate atoms", len(removed))
+        logger.debug("Removed %d duplicate atoms", len(removed))
 
     keep = [i for i in range(n) if i not in removed]
     return crystal[keep]
@@ -536,23 +444,7 @@ def _handle_supercell(
     configs: list[tuple[int, int]],
     name: str,
 ) -> Crystal:
-    """Handle replacement that's too large by creating a supercell.
-
-    Creates a 2x2x2 supercell, re-searches for the query, and performs
-    replacement. The original ``configs`` are **not** faithfully reproduced:
-    only the same *number* of locations is used, with orientation 0 at
-    each (not the original orientation selections).
-
-    Args:
-        match: Original match results.
-        replacement: The replacement fragment.
-        configs: Configuration tuples (from original match; count is preserved
-            but specific location/orientation choices are not).
-        name: Name for result.
-
-    Returns:
-        Child crystal from the supercell replacement.
-    """
+    """Handle replacement that's too large by creating a supercell."""
     logger.warning(
         "Replacement fragment too large for unit cell. Creating 2x2x2 supercell "
         "(auto_supercell=True). WARNING: original location/orientation selections "
@@ -607,15 +499,6 @@ def swap(parent: Crystal, query: Crystal, replacement: Crystal | None, **kwargs)
 
         match = find_pattern(query, parent)
         child = replace_pattern(match, replacement, **kwargs)
-
-    Args:
-        parent: The parent crystal structure.
-        query: The fragment to search for.
-        replacement: The fragment to replace with (None to delete).
-        **kwargs: Additional arguments passed to replace_pattern.
-
-    Returns:
-        New Crystal with replacements applied.
     """
     match = find_pattern(query, parent)
     return replace_pattern(match, replacement, **kwargs)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 5: Cleanup and Repair — Correct Disorder and Remove Guest Molecules
+"""Cleanup and Repair — Correct Disorder and Remove Guest Molecules
 
 Demonstrates a two-step structure repair:
     Step 1: Fix disordered (multi-conformation) pyridyl rings in linkers
@@ -9,13 +9,13 @@ This showcases multi-step modification and the `disconnected_component`
 mode for finding isolated guest molecules.
 
 Input files:
-    crystals/SIFSIX-2-Cu-i.cif      - Parent MOF with disorder + guests
-    moieties/disordered_ligand!.xyz  - Query (disordered ring, masked atoms)
-    moieties/4-pyridyl.xyz           - Replacement (single-conformation ring)
-    moieties/acetylene.xyz           - Guest molecule to remove
+    data/crystals/SIFSIX-2-Cu-i.cif      - Parent MOF with disorder + guests
+    data/moieties/disordered_ligand!.xyz  - Query (disordered ring, masked atoms)
+    data/moieties/4-pyridyl.xyz           - Replacement (single-conformation ring)
+    data/moieties/acetylene.xyz           - Guest molecule to remove
 
 Usage:
-    python cleanup_and_repair.py
+    python repair/cleanup_and_repair.py
 """
 
 from pathlib import Path
@@ -29,8 +29,9 @@ from mofforge import (
 )
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_cleanup_and_repair():

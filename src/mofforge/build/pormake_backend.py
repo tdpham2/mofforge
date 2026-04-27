@@ -1,15 +1,8 @@
-"""Pormake builder backend.
-
-Wraps the `pormake <https://github.com/Sangwon91/PORMAKE>`_ library as
-a :class:`~mofforge.build.base.BuilderBackend`.  Pormake constructs
-porous materials from RCSR topologies and building blocks specified as
-XYZ files (with ``X`` atoms marking connection points).
-
-Pormake is pip-installable (``pip install pormake``).
-"""
+"""Pormake builder backend."""
 
 from __future__ import annotations
 
+import copy
 import io
 import logging
 import shutil
@@ -20,10 +13,6 @@ from mofforge.build.base import BuildResult, BuildingBlock, Timer, Topology
 from mofforge.core.crystal import Crystal
 
 logger = logging.getLogger("mofforge")
-
-# ---------------------------------------------------------------------------
-# Lazy import helpers – keep startup fast when pormake is not needed.
-# ---------------------------------------------------------------------------
 
 _pm = None  # cached pormake module
 
@@ -44,13 +33,7 @@ def _get_pormake():  # noqa: ANN202
 
 
 class PormakeBackend:
-    """Backend that delegates MOF construction to Pormake.
-
-    Args:
-        output_dir: Default directory for writing generated CIF files.
-        bb_dir: Optional directory containing building-block XYZ files.
-            If *None*, an in-memory registry is used instead.
-    """
+    """Backend that delegates MOF construction to Pormake."""
 
     name: str = "pormake"
 
@@ -72,25 +55,13 @@ class PormakeBackend:
         self._registered_nodes: dict[str, BuildingBlock] = {}
         self._registered_edges: dict[str, BuildingBlock] = {}
 
-    # ------------------------------------------------------------------ #
-    # Internal helpers
-    # ------------------------------------------------------------------ #
-
     def _get_database(self):  # noqa: ANN202
         """Return a pormake.Database instance."""
         pm = _get_pormake()
         return pm.Database()
 
     def _load_pormake_bb(self, block: BuildingBlock):  # noqa: ANN202
-        """Convert a :class:`BuildingBlock` into a ``pormake.BuildingBlock``.
-
-        Supports two modes:
-
-        1. **File-based**: ``block.source`` is a path to an XYZ file in
-           pormake's expected format (``X`` atoms mark connection points).
-        2. **From database**: ``block.source`` matches a name in the
-           pormake database.
-        """
+        """Convert a :class:`BuildingBlock` into a ``pormake.BuildingBlock``."""
         pm = _get_pormake()
         src = Path(str(block.source))
 
@@ -103,15 +74,11 @@ class PormakeBackend:
             db = self._get_database()
             return db.get_bb(block.name)
         except Exception:
-            pass
+            logger.debug("Failed to load '%s' from pormake database", block.name, exc_info=True)
 
         raise FileNotFoundError(
             f"Building block '{block.name}' not found as file ({src}) or in the pormake database."
         )
-
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Build
-    # ------------------------------------------------------------------ #
 
     def build(
         self,
@@ -121,21 +88,7 @@ class PormakeBackend:
         output_dir: Path,
         **options: Any,
     ) -> BuildResult:
-        """Build a MOF using pormake.
-
-        Args:
-            topology: Topology whose ``name`` is an RCSR code
-                (e.g. ``"pcu"``).
-            nodes: Node building blocks.  Each must resolve to a
-                pormake ``BuildingBlock`` (XYZ file or database name).
-            edges: Edge building blocks (same rules as *nodes*).
-            output_dir: Where to write generated CIF files.
-            **options: Passed through to ``pormake.Builder.build_by_type``
-                (e.g. ``accuracy=10``).
-
-        Returns:
-            A :class:`BuildResult`.
-        """
+        """Build a MOF using pormake."""
         pm = _get_pormake()
         output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -166,7 +119,7 @@ class PormakeBackend:
                 try:
                     bb = self._load_pormake_bb(nodes[0])
                     for nt in unique_node_types:
-                        pm_node_bbs[nt] = bb.copy()
+                        pm_node_bbs[nt] = copy.deepcopy(bb)
                 except Exception as exc:
                     errors.append(f"Failed to load node '{nodes[0].name}': {exc}")
             else:
@@ -190,7 +143,7 @@ class PormakeBackend:
                 try:
                     bb = self._load_pormake_bb(edges[0])
                     for et in unique_edge_types:
-                        pm_edge_bbs[et] = bb.copy()
+                        pm_edge_bbs[et] = copy.deepcopy(bb)
                 except Exception as exc:
                     errors.append(f"Failed to load edge '{edges[0].name}': {exc}")
             elif len(edges) > 0:
@@ -278,10 +231,6 @@ class PormakeBackend:
             },
         )
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Topology introspection
-    # ------------------------------------------------------------------ #
-
     def list_topologies(self) -> list[str]:
         """List available RCSR topology names from the pormake database."""
         try:
@@ -302,16 +251,8 @@ class PormakeBackend:
         except Exception as exc:
             return f"Failed to describe topology '{name}': {exc}"
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Building-block management
-    # ------------------------------------------------------------------ #
-
     def list_building_blocks(self, role: Literal["node", "edge"]) -> list[str]:
-        """List registered building blocks for the given role.
-
-        Returns names from both the in-memory registry and the pormake
-        database.
-        """
+        """List registered building blocks for the given role."""
         registry = self._registered_nodes if role == "node" else self._registered_edges
         names = list(registry.keys())
 
@@ -322,22 +263,12 @@ class PormakeBackend:
                 if bb_name not in names:
                     names.append(bb_name)
         except Exception:
-            pass
+            logger.debug("Failed to list pormake database entries", exc_info=True)
 
         return sorted(names)
 
     def add_building_block(self, block: BuildingBlock) -> dict[str, Any]:
-        """Register a building block.
-
-        If a ``bb_dir`` was provided at construction, the source file
-        is also copied there.
-
-        Args:
-            block: The building block to register.
-
-        Returns:
-            Result dict.
-        """
+        """Register a building block."""
         registry = self._registered_nodes if block.role == "node" else self._registered_edges
         registry[block.name] = block
 
@@ -413,18 +344,7 @@ class PormakeBackend:
         source: Path | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """List or copy building blocks from the pormake database.
-
-        Args:
-            role: ``"node"`` or ``"edge"`` (pormake doesn't distinguish;
-                the role is determined by the number of connection points).
-            names: Names to copy.  If *None*, returns a listing.
-            source: Not used for pormake (database is built-in).
-            dry_run: Preview only.
-
-        Returns:
-            Result dict.
-        """
+        """List or copy building blocks from the pormake database."""
         try:
             db = self._get_database()
             available = sorted(db.bb_list)
@@ -476,10 +396,6 @@ class PormakeBackend:
             "dry_run": False,
         }
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Configuration
-    # ------------------------------------------------------------------ #
-
     def get_configuration(self) -> dict[str, Any]:
         """Return current pormake backend configuration."""
         return {
@@ -493,10 +409,7 @@ class PormakeBackend:
         }
 
     def set_configuration(self, key: str, value: Any) -> dict[str, Any]:
-        """Set a configuration value.
-
-        Supported keys: ``output_dir``, ``bb_dir``.
-        """
+        """Set a configuration value."""
         if key == "output_dir":
             self._output_dir = Path(str(value)).resolve()
             self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -507,10 +420,6 @@ class PormakeBackend:
             return {"success": True, "message": f"Set bb_dir = {self._bb_dir}"}
         return {"success": False, "error": f"Unknown configuration key: {key}"}
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Status
-    # ------------------------------------------------------------------ #
-
     def status(self) -> dict[str, Any]:
         """Return overall status of the pormake backend."""
         try:
@@ -519,6 +428,7 @@ class PormakeBackend:
             n_bbs = len(db.bb_list)
             db_available = True
         except Exception:
+            logger.debug("Pormake database unavailable", exc_info=True)
             n_topos = 0
             n_bbs = 0
             db_available = False
@@ -535,10 +445,6 @@ class PormakeBackend:
             "ready": db_available,
         }
 
-    # ------------------------------------------------------------------ #
-    # Pormake-specific utilities
-    # ------------------------------------------------------------------ #
-
     def visualize_molecule(
         self,
         smiles: str,
@@ -548,21 +454,7 @@ class PormakeBackend:
         height: int = 800,
         device_scale_factor: int = 2,
     ) -> str:
-        """Visualize a molecule with py3Dmol and export a PNG.
-
-        Requires ``architector``, ``py3Dmol``, and ``playwright``.
-
-        Args:
-            smiles: SMILES string of the molecule.
-            labelsize: Font size for atom index labels.
-            png_filename: Output PNG filename.
-            width: Canvas width in CSS pixels.
-            height: Canvas height in CSS pixels.
-            device_scale_factor: Pixel density multiplier.
-
-        Returns:
-            Message with the absolute path to the saved PNG.
-        """
+        """Visualize a molecule with py3Dmol and export a PNG."""
         import os
         import tempfile
 
@@ -640,19 +532,7 @@ class PormakeBackend:
         model_name: str = "argo:gpt-4o-mini",
         base_url: str | None = None,
     ) -> dict[str, Any]:
-        """Use a multimodal LLM to infer connection points from an image.
-
-        Requires ``chemgraph``.
-
-        Args:
-            image_path: Path to the PNG image of the ligand.
-            smiles: SMILES string of the molecule.
-            model_name: LLM model name.
-            base_url: Optional API base URL.
-
-        Returns:
-            Dict with ``smiles``, ``connection_points``, and ``reasoning``.
-        """
+        """Use a multimodal LLM to infer connection points from an image."""
         import base64
         import json
 
@@ -663,7 +543,7 @@ class PormakeBackend:
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         vision_llm = load_argoapi_model(
-            model_name=model_name, temperature=0, base_url=base_url, api_key=""
+            model_name=model_name, temperature=0, base_url=base_url, api_key=None
         )
 
         messages = [

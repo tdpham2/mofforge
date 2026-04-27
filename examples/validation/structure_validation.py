@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Example 10: Structure Validation
+"""Structure Validation
 
 Demonstrates post-modification structure validation to catch problems
 like steric clashes, unusual bond lengths, and coordination geometry
 issues.
 
 Usage:
-    python structure_validation.py
-    python structure_validation.py path/to/structure.cif
+    python validation/structure_validation.py
+    python validation/structure_validation.py path/to/structure.cif
 """
 
 import argparse
@@ -16,7 +16,8 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, validate_structure
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
 
 
 def run_validation(crystal_path: str):

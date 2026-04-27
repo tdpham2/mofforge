@@ -1,4 +1,4 @@
-"""Pattern matching API: MatchResult class and find_pattern function."""
+"""Pattern matching API for substructure search in crystals."""
 
 from __future__ import annotations
 
@@ -15,16 +15,7 @@ logger = logging.getLogger("mofforge")
 
 @dataclass
 class MatchResult:
-    """Stores the results of a pattern search.
-
-    Attributes:
-        parent: The crystal structure that was searched.
-        query: The fragment that was searched for.
-        isomorphisms: Nested list of query-to-parent atom correspondences,
-            grouped by location then by orientation.
-            ``isomorphisms[i_loc][i_ori]`` is a dict mapping
-            query atom indices to parent atom indices.
-    """
+    """Stores the results of a pattern search."""
 
     parent: Crystal
     query: Crystal
@@ -70,31 +61,20 @@ def find_pattern(
 
     Matches are made on the basis of atomic species and chemical bonding
     networks, including bonds across unit cell periodic boundaries.
-
-    The search fragment may contain anchor-tagged atoms (species ending
-    with '!'). These tags are stripped for searching so that, e.g., 'H!'
-    matches 'H' in the parent.
-
-    Args:
-        query: The fragment to search for.
-        parent: The crystal structure to search in.
-        disconnected_component: If True, search for exact isolated matches
-            (e.g. guest molecules). Default False performs substructure search.
-
-    Returns:
-        MatchResult object containing all identified isomorphisms grouped
-        by location and orientation.
-
-    Raises:
-        ValueError: If parent has no bonds.
     """
     if parent.n_atoms == 0:
         return MatchResult(parent=parent, query=query, isomorphisms=[])
 
     if parent.n_bonds == 0:
+        raise ValueError("Parent structure has no bonds.")
+
+    if query.n_atoms == 0:
+        return MatchResult(parent=parent, query=query, isomorphisms=[])
+
+    if query.n_bonds == 0:
         raise ValueError(
-            "The parent structure must have bonds. "
-            "Use infer_bonds(crystal, periodic=True) to create them."
+            "Query pattern has no bonds. A query must have at least one bond "
+            "to perform a meaningful substructure search."
         )
 
     # Make a copy of query with anchor tags removed for searching
@@ -123,7 +103,7 @@ def find_pattern(
     # Convert to nested list format
     isomorphisms = list(location_groups.values())
 
-    logger.info(
+    logger.debug(
         "find_pattern '%s' in '%s': %d isomorphisms at %d locations",
         query.name,
         parent.name,

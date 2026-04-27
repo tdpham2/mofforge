@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 3: Selective Modification
+"""Selective Modification
 
 Demonstrates all five replacement modes available when substituting
 functional groups onto MOF linkers.
@@ -12,12 +12,12 @@ Modes:
     5. Random orientations (skip alignment optimization)
 
 Input files:
-    crystals/IRMOF-1.cif                - Parent MOF
-    moieties/2-!-p-phenylene.xyz        - Query (phenylene with H! tag)
-    moieties/2-nitro-p-phenylene.xyz    - Replacement (phenylene with nitro group)
+    data/crystals/IRMOF-1.cif                - Parent MOF
+    data/moieties/2-!-p-phenylene.xyz        - Query (phenylene with H! tag)
+    data/moieties/2-nitro-p-phenylene.xyz    - Replacement (phenylene with nitro group)
 
 Usage:
-    python selective_modification.py
+    python modify/selective_modification.py
 """
 
 from pathlib import Path
@@ -25,8 +25,9 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_replacement_modes():

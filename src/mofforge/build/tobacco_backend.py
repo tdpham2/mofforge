@@ -1,11 +1,4 @@
-"""TOBACCO 3.0 builder backend.
-
-Wraps the TOBACCO (Topologically Based Crystal Constructor) tool as
-a :class:`~mofforge.build.base.BuilderBackend`.  TOBACCO is **not** a
-pip-installable package; it is a directory of Python scripts that must
-be executed from within its own directory.  The path to the TOBACCO
-installation is configured via :class:`~mofforge.build.config.BuildConfig`.
-"""
+"""TOBACCO 3.0 builder backend."""
 
 from __future__ import annotations
 
@@ -13,9 +6,9 @@ import ast
 import importlib
 import logging
 import os
+import re
 import shutil
 import sys
-import traceback
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Literal
@@ -48,13 +41,7 @@ _TOBACCO_MODULES = (
 
 
 class TobaccoBackend:
-    """Backend that delegates MOF construction to TOBACCO 3.0.
-
-    Args:
-        tobacco_path: Absolute path to the TOBACCO project directory
-            (the folder containing ``tobacco.py``, ``configuration.py``,
-            ``templates/``, ``nodes/``, ``edges/``).
-    """
+    """Backend that delegates MOF construction to TOBACCO 3.0."""
 
     name: str = "tobacco"
 
@@ -65,18 +52,9 @@ class TobaccoBackend:
             details = "\n  ".join(errors)
             raise ConfigError(f"Invalid TOBACCO installation at {self._root}:\n  {details}")
 
-    # ------------------------------------------------------------------ #
-    # Internal helpers
-    # ------------------------------------------------------------------ #
-
     @contextmanager
     def _tobacco_context(self) -> Iterator[None]:
-        """Temporarily switch to TOBACCO's directory for execution.
-
-        Saves and restores *cwd* and *sys.path*.  Also forces a fresh
-        import of TOBACCO's ``configuration`` module so that any
-        on-disk changes take effect.
-        """
+        """Temporarily switch to TOBACCO's directory for execution."""
         saved_cwd = os.getcwd()
         saved_path = sys.path[:]
         # Remove any previously cached tobacco modules so a fresh
@@ -123,11 +101,7 @@ class TobaccoBackend:
         return sorted(f.name for f in directory.iterdir() if f.suffix == ".cif")
 
     def _collect_outputs(self) -> dict[str, list[str]]:
-        """Return ``{subdirectory: [cif_names]}`` from ``output_cifs/``.
-
-        CIF files placed directly in ``output_cifs/`` (no subdirectory)
-        are grouped under the key ``"."``.
-        """
+        """Return ``{subdirectory: [cif_names]}`` from ``output_cifs/``."""
         output_dir = self._root / "output_cifs"
         results: dict[str, list[str]] = {}
         if not output_dir.is_dir():
@@ -144,10 +118,6 @@ class TobaccoBackend:
             results["."] = sorted(top_level_cifs)
         return results
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Build
-    # ------------------------------------------------------------------ #
-
     def build(
         self,
         topology: Topology,
@@ -159,27 +129,7 @@ class TobaccoBackend:
         ignore_errors: bool = True,
         **options: Any,
     ) -> BuildResult:
-        """Run TOBACCO to generate MOF structures.
-
-        Args:
-            topology: Topology whose ``name`` is the template CIF filename
-                (e.g. ``"pcu.cif"``).  If ``name`` lacks a ``.cif`` suffix
-                it is appended automatically.
-            nodes: Node building blocks.  Each must have a CIF
-                ``source``.  The ``nodes/`` directory is cleared and
-                these blocks are copied in before running TOBACCO.
-            edges: Edge building blocks (same rules as *nodes*).
-                The ``edges/`` directory is cleared and these blocks
-                are copied in before running TOBACCO.
-            output_dir: Directory into which new output CIFs are
-                copied after the run.
-            parallel: Run templates in parallel (uses all CPUs).
-            ignore_errors: Continue to next template on error.
-            **options: Currently unused; reserved for future expansion.
-
-        Returns:
-            A :class:`BuildResult`.
-        """
+        """Run TOBACCO to generate MOF structures."""
         output_dir = Path(output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -301,12 +251,7 @@ class TobaccoBackend:
         )
 
     def _snapshot_outputs(self) -> set[Path]:
-        """Return the set of all CIF paths currently in ``output_cifs/``.
-
-        Looks for CIF files both directly inside ``output_cifs/`` and
-        inside its immediate subdirectories (TOBACCO may use either
-        layout depending on configuration).
-        """
+        """Return the set of all CIF paths currently in ``output_cifs/``."""
         output_dir = self._root / "output_cifs"
         paths: set[Path] = set()
         if output_dir.is_dir():
@@ -324,18 +269,7 @@ class TobaccoBackend:
         nodes: list[BuildingBlock],
         edges: list[BuildingBlock],
     ) -> list[str]:
-        """Clear TOBACCO's ``nodes/`` and ``edges/`` dirs and copy in *nodes*/*edges*.
-
-        This ensures TOBACCO sees exactly the building blocks the caller
-        specified, with no stale files left over from previous runs.
-
-        Args:
-            nodes: Node building blocks to stage.
-            edges: Edge building blocks to stage.
-
-        Returns:
-            A list of error messages.  Empty means success.
-        """
+        """Clear TOBACCO's ``nodes/`` and ``edges/`` dirs and copy in the given blocks."""
         errors: list[str] = []
 
         if not nodes and not edges:
@@ -364,7 +298,7 @@ class TobaccoBackend:
         if nodes or edges:
             staged_nodes = self._list_cifs(self._dir_for_role("node"))
             staged_edges = self._list_cifs(self._dir_for_role("edge"))
-            logger.info(
+            logger.debug(
                 "Staged %d node(s) and %d edge(s) for TOBACCO build",
                 len(staged_nodes),
                 len(staged_edges),
@@ -372,20 +306,12 @@ class TobaccoBackend:
 
         return errors
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Topology introspection
-    # ------------------------------------------------------------------ #
-
     def list_topologies(self) -> list[str]:
         """List available template CIF files."""
         return self._list_cifs(self._dir_for_role("template"))
 
     def describe_topology(self, name: str) -> str:
-        """Return basic information about a template.
-
-        TOBACCO templates are CIF files without built-in descriptions,
-        so this returns the filename and file size.
-        """
+        """Return basic information about a template."""
         if not name.endswith(".cif"):
             name += ".cif"
         path = self._dir_for_role("template") / name
@@ -394,23 +320,12 @@ class TobaccoBackend:
         size = path.stat().st_size
         return f"Template: {name} ({size} bytes)"
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Building-block management
-    # ------------------------------------------------------------------ #
-
     def list_building_blocks(self, role: Literal["node", "edge"]) -> list[str]:
         """List CIF files in the ``nodes/`` or ``edges/`` directory."""
         return self._list_cifs(self._dir_for_role(role))
 
     def add_building_block(self, block: BuildingBlock) -> dict[str, Any]:
-        """Copy a CIF file into the appropriate TOBACCO directory.
-
-        Args:
-            block: Must have a CIF file as ``source``.
-
-        Returns:
-            Result dict with ``success`` and ``file`` keys.
-        """
+        """Copy a CIF file into the appropriate TOBACCO directory."""
         src = Path(block.source).resolve()
         if not src.is_file():
             return {"success": False, "error": f"Source file not found: {src}"}
@@ -505,19 +420,7 @@ class TobaccoBackend:
         source: Path | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Copy building blocks from a database directory into the active directory.
-
-        Args:
-            role: ``"node"`` or ``"edge"``.
-            names: Filenames to copy.  If *None*, returns the list of
-                available files without copying anything.
-            source: Optional custom source directory.  If *None*, uses
-                TOBACCO's built-in database directory.
-            dry_run: Preview only (default *True*).
-
-        Returns:
-            Result dict.
-        """
+        """Copy building blocks from a database directory into the active directory."""
         # Also support "template" role for internal use
         role_key: Literal["node", "edge", "template"] = role  # type: ignore[assignment]
         target_dir = self._dir_for_role(role_key)
@@ -613,10 +516,6 @@ class TobaccoBackend:
             result["source"] = str(source)
         return result
 
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Configuration
-    # ------------------------------------------------------------------ #
-
     def get_configuration(self) -> dict[str, Any]:
         """Read TOBACCO's ``configuration.py`` and return values as a dict."""
         config_file = self._root / "configuration.py"
@@ -644,13 +543,24 @@ class TobaccoBackend:
         if not config_file.is_file():
             return {"success": False, "error": "configuration.py not found"}
 
+        # Determine the text to write as the value.
+        if isinstance(value, str):
+            try:
+                ast.literal_eval(value)
+                value_text = value  # already a valid Python literal
+            except (ValueError, SyntaxError):
+                value_text = repr(value)
+        else:
+            value_text = repr(value)
+
         lines = config_file.read_text().splitlines(keepends=True)
         found = False
+        key_pattern = re.compile(rf"^{re.escape(key)}\s*=")
         new_lines: list[str] = []
         for line in lines:
             stripped = line.strip()
-            if stripped.startswith(f"{key} =") or stripped.startswith(f"{key}="):
-                new_lines.append(f"{key} = {value}\n")
+            if key_pattern.match(stripped):
+                new_lines.append(f"{key} = {value_text}\n")
                 found = True
             else:
                 new_lines.append(line)
@@ -659,11 +569,7 @@ class TobaccoBackend:
             return {"success": False, "error": f"Configuration key '{key}' not found"}
 
         config_file.write_text("".join(new_lines))
-        return {"success": True, "message": f"Set {key} = {value}", "file": str(config_file)}
-
-    # ------------------------------------------------------------------ #
-    # BuilderBackend – Status
-    # ------------------------------------------------------------------ #
+        return {"success": True, "message": f"Set {key} = {value_text}", "file": str(config_file)}
 
     def status(self) -> dict[str, Any]:
         """Return overall status of the TOBACCO installation."""
@@ -683,10 +589,6 @@ class TobaccoBackend:
             "configuration": config.get("configuration", {}),
             "ready": True,
         }
-
-    # ------------------------------------------------------------------ #
-    # TOBACCO-specific extras
-    # ------------------------------------------------------------------ #
 
     def list_outputs(self) -> dict[str, Any]:
         """List generated output CIF files organised by subdirectory."""

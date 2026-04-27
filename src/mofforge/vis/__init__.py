@@ -1,20 +1,4 @@
-"""Visualization subsystem for mofforge.
-
-Renders crystal structures as PNG images using 3Dmol.js and Playwright.
-Supports both periodic structures (MOFs with unit cell) and non-periodic
-fragments.
-
-Quick start::
-
-    from mofforge import Crystal, render_to_png
-
-    crystal = Crystal.from_cif("IRMOF-1.cif")
-    render_to_png(crystal, "IRMOF-1.png", show_unit_cell=True)
-
-    # Or from a file directly:
-    from mofforge.vis import render_file_to_png
-    render_file_to_png("IRMOF-1.cif", "IRMOF-1.png")
-"""
+"""Visualization subsystem for mofforge."""
 
 from mofforge.vis.colors import (
     DEFAULT_COLOR,

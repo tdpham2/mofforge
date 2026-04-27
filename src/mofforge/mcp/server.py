@@ -1,30 +1,4 @@
-"""mofforge MCP Server.
-
-Exposes mofforge's crystal structure manipulation capabilities as
-Model Context Protocol (MCP) tools for AI agents.
-
-Available tools
----------------
-- ``mofforge_search`` -- Find substructure patterns via VF2 isomorphism.
-- ``mofforge_replace`` -- Replace molecular fragments in a crystal.
-- ``mofforge_remove`` -- Remove guest molecules from a crystal.
-- ``mofforge_validate`` -- Validate a crystal structure.
-- ``mofforge_render`` -- Render a structure file to a labelled PNG image.
-- ``mofforge_smarts_search`` -- Search using SMARTS-like pattern strings.
-- ``mofforge_build`` -- Build a MOF from topology + building blocks.
-- ``mofforge_list_topologies`` -- List available topologies.
-- ``mofforge_list_building_blocks`` -- List available node/edge building blocks.
-
-Usage
------
-::
-
-    # stdio mode (for LangGraph / OpenCode / Claude Desktop)
-    mofforge-mcp
-
-    # Or run directly:
-    python -m mofforge.mcp.server
-"""
+"""mofforge MCP Server exposing crystal manipulation tools for AI agents."""
 
 from __future__ import annotations
 
@@ -36,10 +10,6 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger("mofforge.mcp")
-
-# ---------------------------------------------------------------------------
-# FastMCP server instance
-# ---------------------------------------------------------------------------
 
 mcp = FastMCP(
     name="mofforge",
@@ -59,10 +29,6 @@ mcp = FastMCP(
     ),
 )
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _resolve_output(path: str) -> str:
@@ -94,10 +60,6 @@ def _load_fragment(xyz_path: str):
     return load_fragment(p.name, fragment_path=str(p.parent))
 
 
-# ---------------------------------------------------------------------------
-# MCP tool definitions
-# ---------------------------------------------------------------------------
-
 
 @mcp.tool(
     name="mofforge_search",
@@ -122,11 +84,6 @@ def mofforge_search(
         Absolute path to the query fragment XYZ file.
     disconnected : bool
         If True, search for isolated (guest) molecules only.
-
-    Returns
-    -------
-    str
-        JSON summary of search results.
     """
     from mofforge.search.search import find_pattern
 
@@ -182,11 +139,6 @@ def mofforge_replace(
         If True, use random orientations at each location.
     validate : bool
         If True, validate the output structure.
-
-    Returns
-    -------
-    str
-        JSON summary of the replacement result.
     """
     from mofforge.replace.replace import replace_pattern
     from mofforge.search.search import find_pattern
@@ -256,11 +208,6 @@ def mofforge_remove(
         Absolute path to the guest molecule XYZ file.
     output_cif : str
         Output CIF file path.
-
-    Returns
-    -------
-    str
-        JSON summary of the removal result.
     """
     from mofforge.replace.replace import replace_pattern
     from mofforge.search.search import find_pattern
@@ -312,11 +259,6 @@ def mofforge_validate(
         Check for unusual bond lengths.
     check_coordination : bool
         Check metal coordination numbers.
-
-    Returns
-    -------
-    str
-        JSON validation report.
     """
     from mofforge.validation import validate_structure
 
@@ -375,11 +317,6 @@ def mofforge_render(
         Draw unit cell edges (auto-enabled for CIF files).
     width, height : int
         Image dimensions in pixels.
-
-    Returns
-    -------
-    str
-        JSON with the path to the rendered PNG.
     """
     from mofforge.vis.render import render_file_to_png
 
@@ -425,11 +362,6 @@ def mofforge_smarts_search(
         Absolute path to the CIF file.
     pattern : str
         SMARTS-like pattern (e.g. "Zn-O-C", "[*]-N-[*]").
-
-    Returns
-    -------
-    str
-        JSON summary of matches found.
     """
     from mofforge.smarts import smarts_search
 
@@ -478,11 +410,6 @@ def mofforge_build(
         Paths to edge building block files.
     output_dir : str
         Output directory for CIF files.
-
-    Returns
-    -------
-    str
-        JSON summary of the build result.
     """
     from mofforge.build import MOFBuilder
 
@@ -540,11 +467,6 @@ def mofforge_list_topologies(
     ----------
     backend : str
         Builder backend: "tobacco" or "pormake".
-
-    Returns
-    -------
-    str
-        JSON list of topology names.
     """
     from mofforge.build import MOFBuilder
 
@@ -586,11 +508,6 @@ def mofforge_list_building_blocks(
         Type of building blocks: "nodes" or "edges".
     backend : str
         Builder backend: "tobacco" or "pormake".
-
-    Returns
-    -------
-    str
-        JSON list of building block names.
     """
     from mofforge.build import MOFBuilder
 
@@ -629,10 +546,6 @@ def mofforge_list_building_blocks(
             indent=2,
         )
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 
 def main():

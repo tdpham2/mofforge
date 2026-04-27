@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Example 9: Multi-step Pipeline
+"""Multi-step Pipeline
 
 Demonstrates the Pipeline API for chaining multiple find-and-replace
 operations on a crystal structure in a single fluent call.
 
 Usage:
-    python multi_step_pipeline.py
+    python pipeline/multi_step_pipeline.py
 """
 
 from pathlib import Path
@@ -14,8 +14,9 @@ from mofforge import Crystal, infer_bonds
 from mofforge.pipeline import Pipeline
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_pipeline_demo():

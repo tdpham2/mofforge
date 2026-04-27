@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import re
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,6 +14,7 @@ from pymatgen.core import Lattice, Structure
 
 from mofforge.io.cif import read_cif, write_cif
 from mofforge.io.xyz import write_xyz
+from mofforge.utils.config import clean_species as _clean_species
 from mofforge.utils.periodic import wrap_coords
 
 if TYPE_CHECKING:
@@ -22,20 +22,6 @@ if TYPE_CHECKING:
     from mofforge.search.search import MatchResult
 
 logger = logging.getLogger("mofforge")
-
-# Regex to strip R-group tag and oxidation state info, keeping only the element symbol
-_ELEMENT_RE = re.compile(r"^([A-Z][a-z]?)")
-
-
-def _clean_species(species: str) -> str:
-    """Strip R-group tag (!) from a species label for pymatgen compatibility.
-
-    'H!' -> 'H', 'C!' -> 'C', 'Zn' -> 'Zn'.
-    """
-    m = _ELEMENT_RE.match(species)
-    if m:
-        return m.group(1)
-    return species
 
 
 class Crystal:
@@ -48,13 +34,6 @@ class Crystal:
     may include R-group tags like 'H!' or 'C!'). The pymatgen Structure
     only stores clean element symbols.
 
-    Attributes:
-        name: Identifier for this crystal.
-        structure: pymatgen Structure (lattice, clean species, fractional coords).
-        bonds: NetworkX Graph with integer node IDs matching atom indices.
-            Node attributes: 'species' (str — original label with tags).
-            Edge attributes: 'distance' (float, Angstroms), 'cross_boundary' (bool).
-        provenance: Optional provenance metadata tracking modifications.
     """
 
     def __init__(
@@ -80,10 +59,6 @@ class Crystal:
         if self.bonds.number_of_nodes() == 0 and self.n_atoms > 0:
             for i in range(self.n_atoms):
                 self.bonds.add_node(i, species=self._species_labels[i])
-
-    # -------------------------------------------------------------------------
-    # Properties
-    # -------------------------------------------------------------------------
 
     @property
     def n_atoms(self) -> int:
@@ -115,21 +90,9 @@ class Crystal:
         """Number of bonds (edges in the bond graph)."""
         return self.bonds.number_of_edges()
 
-    # -------------------------------------------------------------------------
-    # Constructors
-    # -------------------------------------------------------------------------
-
     @classmethod
     def from_cif(cls, filepath: str | Path, name: str | None = None) -> Crystal:
-        """Load a Crystal from a CIF file.
-
-        Args:
-            filepath: Path to the CIF file.
-            name: Optional name; defaults to the filename stem.
-
-        Returns:
-            Crystal with no bonds (use infer_bonds to add them).
-        """
+        """Load a Crystal from a CIF file."""
         filepath = Path(filepath)
         if name is None:
             name = filepath.stem
@@ -157,12 +120,6 @@ class Crystal:
 
         Species labels may include R-group tags (e.g. 'H!', 'C!').
         These are stored separately; pymatgen only sees clean element symbols.
-
-        Args:
-            species: List of species strings (may include '!' tags).
-            cart_coords: Cartesian coordinates, shape (N, 3).
-            name: Name for the crystal.
-            lattice: Optional lattice; defaults to a 100 A cube.
         """
         if lattice is None:
             lattice = Lattice.cubic(100.0)
@@ -190,30 +147,17 @@ class Crystal:
         structure = Structure(lattice, [], [])
         return cls(name=name, structure=structure, species_labels=[])
 
-    # -------------------------------------------------------------------------
-    # Indexing and slicing
-    # -------------------------------------------------------------------------
-
     def __getitem__(self, indices: list[int] | np.ndarray) -> Crystal:
         """Extract a sub-crystal containing only the specified atom indices.
 
         Bonds between selected atoms are preserved. Node IDs are
         renumbered to 0..len(indices)-1.
-
-        Args:
-            indices: List of atom indices to extract.
-
-        Returns:
-            New Crystal containing only the specified atoms.
         """
         indices = list(indices)
         if not indices:
             return Crystal.empty(name=f"subset_{self.name}")
         if len(indices) != len(set(indices)):
-            raise ValueError(
-                "Duplicate atom indices are not supported in __getitem__. "
-                f"Got {len(indices)} indices but only {len(set(indices))} are unique."
-            )
+            raise ValueError("Duplicate atom indices.")
 
         # Build new structure with clean species
         new_labels = [self._species_labels[i] for i in indices]
@@ -245,49 +189,20 @@ class Crystal:
         )
 
     def __contains__(self, query: Crystal) -> bool:
-        """Check whether *query* is a substructure of this crystal.
-
-        Args:
-            query: The fragment to search for.
-
-        Returns:
-            True if at least one match is found.
-        """
+        """Check whether *query* is a substructure of this crystal."""
         from mofforge.search.search import find_pattern
 
         result = find_pattern(query, self)
         return result.nb_locations() > 0
 
     def find(self, query: Crystal) -> MatchResult:
-        """Search for *query* as a substructure and return the full result.
-
-        Args:
-            query: The fragment to search for.
-
-        Returns:
-            MatchResult object with isomorphism results.
-        """
+        """Search for *query* as a substructure and return the full result."""
         from mofforge.search.search import find_pattern
 
         return find_pattern(query, self)
 
-    # -------------------------------------------------------------------------
-    # Combination
-    # -------------------------------------------------------------------------
-
     def __add__(self, other: Crystal) -> Crystal:
-        """Combine two crystals into one (add atoms from other into self).
-
-        Uses self's lattice. Other's atoms are converted to fractional
-        coordinates in self's lattice. Bond graphs are merged with
-        other's nodes offset by self.n_atoms.
-
-        Args:
-            other: Crystal whose atoms to add.
-
-        Returns:
-            New Crystal with combined atoms and bonds.
-        """
+        """Combine two crystals into one (add atoms from other into self)."""
         if other.n_atoms == 0:
             return self.copy()
         if self.n_atoms == 0:
@@ -318,7 +233,6 @@ class Crystal:
         for u, v, data in other.bonds.edges(data=True):
             new_bonds.add_edge(u + offset, v + offset, **data)
 
-        # Warn if provenance is being lost from the other crystal
         if other.provenance is not None and self.provenance is not None:
             logger.debug(
                 "Crystal.__add__: both operands have provenance; "
@@ -334,10 +248,6 @@ class Crystal:
             provenance=combined_provenance,
             species_labels=combined_labels,
         )
-
-    # -------------------------------------------------------------------------
-    # Coordinate operations
-    # -------------------------------------------------------------------------
 
     def to_cart(self, frac: np.ndarray) -> np.ndarray:
         """Convert fractional coordinates to Cartesian."""
@@ -355,11 +265,7 @@ class Crystal:
         return new_xtal
 
     def set_frac_coords(self, new_coords: np.ndarray) -> None:
-        """Update fractional coordinates in-place.
-
-        Args:
-            new_coords: New fractional coordinates, shape (N, 3).
-        """
+        """Update fractional coordinates in-place."""
         if new_coords.shape != (self.n_atoms, 3):
             raise ValueError(
                 f"Expected coordinates shape ({self.n_atoms}, 3), got {new_coords.shape}."
@@ -375,17 +281,9 @@ class Crystal:
             )
 
     def set_cart_coords(self, new_coords: np.ndarray) -> None:
-        """Update Cartesian coordinates in-place (converted to fractional).
-
-        Args:
-            new_coords: New Cartesian coordinates, shape (N, 3).
-        """
+        """Update Cartesian coordinates in-place (converted to fractional)."""
         frac = self.to_frac(new_coords)
         self.set_frac_coords(frac)
-
-    # -------------------------------------------------------------------------
-    # I/O
-    # -------------------------------------------------------------------------
 
     def write_cif(self, filepath: str | Path) -> None:
         """Write this crystal to a CIF file."""
@@ -394,10 +292,6 @@ class Crystal:
     def write_xyz(self, filepath: str | Path, comment: str = "") -> None:
         """Write this crystal's atoms to an XYZ file (Cartesian coordinates)."""
         write_xyz(self._species_labels, self.cart_coords, filepath, comment)
-
-    # -------------------------------------------------------------------------
-    # Copy and display
-    # -------------------------------------------------------------------------
 
     def copy(self) -> Crystal:
         """Return a deep copy of this Crystal."""

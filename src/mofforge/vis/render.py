@@ -1,35 +1,10 @@
-"""Render crystal structures as PNG images using 3Dmol.js and Playwright.
-
-Provides functions to render mofforge ``Crystal`` objects or structure files
-(CIF, XYZ) into high-quality PNG images with atom labels, suitable for
-vision-LLM analysis or visual inspection.
-
-Key functions
--------------
-- ``build_html``           -- Generate a self-contained 3Dmol.js HTML page.
-- ``render_to_png``        -- Sync: render a Crystal to PNG.
-- ``async_render_to_png``  -- Async variant for use in asyncio event loops.
-- ``render_file_to_png``   -- Sync: read a CIF/XYZ file and render to PNG.
-- ``async_render_file_to_png`` -- Async variant.
-
-Dependencies
-------------
-- ``pymatgen`` (required -- already a mofforge dependency)
-- ``numpy`` (required)
-- ``playwright`` (required for PNG rendering; install with
-  ``pip install playwright && playwright install chromium``)
-
-Adapted from ChemGraph's ``render_structure.py`` for mofforge's pymatgen-based
-Crystal data structures, with additional support for periodic structures
-(unit cell rendering).
-"""
+"""Render crystal structures as PNG images using 3Dmol.js and Playwright."""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
-import re
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -37,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from mofforge.utils.config import clean_species as _clean_symbol
 from mofforge.vis.colors import METALS
 
 if TYPE_CHECKING:
@@ -44,42 +20,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mofforge")
 
-# Regex to strip R-group tag, keeping only the element symbol
-_ELEMENT_RE = re.compile(r"^([A-Z][a-z]?)")
-
-
-def _clean_symbol(species: str) -> str:
-    """Strip R-group tag and return the bare element symbol."""
-    m = _ELEMENT_RE.match(species)
-    return m.group(1) if m else species
-
-
-# ---------------------------------------------------------------------------
-# Atom label generation
-# ---------------------------------------------------------------------------
-
 
 def generate_atom_labels(
     species: list[str],
     mode: str = "sequential",
 ) -> list[str]:
-    """Generate atom labels for a structure.
-
-    Parameters
-    ----------
-    species : list[str]
-        List of species labels (may include R-group tags like ``'H!'``).
-    mode : str
-        Labeling mode:
-
-        - ``"sequential"``: Element + global 1-based index (C1, N2, C3, O4, ...)
-        - ``"per_element"``: Element + per-element count (C1, C2, N1, O1, O2, ...)
-        - ``"none"``: No labels (returns empty list).
-
-    Returns
-    -------
-    list[str]
-    """
+    """Generate atom labels for a structure."""
     if mode == "none":
         return []
 
@@ -100,11 +46,6 @@ def generate_atom_labels(
         )
 
 
-# ---------------------------------------------------------------------------
-# Crystal to XYZ string conversion
-# ---------------------------------------------------------------------------
-
-
 def _crystal_to_xyz_string(crystal: Crystal) -> str:
     """Convert a Crystal's atoms to an XYZ-format string for 3Dmol.js."""
     species = crystal.species
@@ -123,11 +64,6 @@ def _crystal_to_cif_string(crystal: Crystal) -> str:
 
     writer = CifWriter(crystal.structure)
     return str(writer)
-
-
-# ---------------------------------------------------------------------------
-# Unit cell rendering helpers
-# ---------------------------------------------------------------------------
 
 
 def _unit_cell_js(crystal: Crystal) -> str:
@@ -180,11 +116,6 @@ def _unit_cell_js(crystal: Crystal) -> str:
     return "\n        ".join(js_lines)
 
 
-# ---------------------------------------------------------------------------
-# HTML builder
-# ---------------------------------------------------------------------------
-
-
 def build_html(
     crystal: Crystal,
     label_mode: str = "sequential",
@@ -200,37 +131,7 @@ def build_html(
     bg_color: str = "white",
     rotate: tuple[float, float, float] | None = None,
 ) -> str:
-    """Build a self-contained HTML page that renders the structure with 3Dmol.js.
-
-    Parameters
-    ----------
-    crystal : Crystal
-        The crystal structure to render.
-    label_mode : str
-        ``"sequential"``, ``"per_element"``, or ``"none"``.
-    width, height : int
-        Viewer dimensions in pixels.
-    representation : str
-        ``"ball_stick"``, ``"stick"``, or ``"sphere"``.
-    sphere_scale, stick_scale, metal_scale : float
-        Scaling factors for the representation.
-    label_size : int
-        Font size for atom labels (in points).
-    show_formula : bool
-        Whether to show the chemical formula as an overlay label.
-    show_unit_cell : bool
-        Whether to draw the unit cell parallelepiped edges. Useful for
-        periodic structures like MOFs.
-    bg_color : str
-        Background color of the viewer.
-    rotate : tuple of (float, float, float) or None
-        Rotation angles in degrees as (x, y, z).
-
-    Returns
-    -------
-    str
-        Complete HTML document string.
-    """
+    """Build a self-contained HTML page that renders the structure with 3Dmol.js."""
     # Use XYZ format for 3Dmol.js (simpler, always works)
     xyz_string = _crystal_to_xyz_string(crystal)
     species = crystal.species
@@ -370,11 +271,6 @@ def build_html(
     return html
 
 
-# ---------------------------------------------------------------------------
-# PNG rendering (sync)
-# ---------------------------------------------------------------------------
-
-
 def render_to_png(
     crystal: Crystal,
     output_file: str = "structure.png",
@@ -392,54 +288,11 @@ def render_to_png(
     timeout: int = 30000,
     rotate: tuple[float, float, float] | None = None,
 ) -> str:
-    """Render a crystal structure to a PNG file.
-
-    Parameters
-    ----------
-    crystal : Crystal
-        The structure to render.
-    output_file : str
-        Path to the output PNG file.
-    label_mode : str
-        ``"sequential"``, ``"per_element"``, or ``"none"``.
-    width, height : int
-        Image dimensions in pixels.
-    representation : str
-        ``"ball_stick"``, ``"stick"``, or ``"sphere"``.
-    sphere_scale, stick_scale, metal_scale : float
-        Scaling factors for the representation.
-    label_size : int
-        Font size for atom labels.
-    show_formula : bool
-        Whether to show the chemical formula.
-    show_unit_cell : bool
-        Whether to draw the unit cell edges.
-    bg_color : str
-        Background color of the viewer.
-    timeout : int
-        Timeout in milliseconds for Playwright to wait for rendering.
-    rotate : tuple of (float, float, float) or None
-        Rotation angles in degrees as (x, y, z).
-
-    Returns
-    -------
-    str
-        Absolute path to the output PNG file.
-
-    Raises
-    ------
-    ImportError
-        If ``playwright`` is not installed.
-    """
+    """Render a crystal structure to a PNG file."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
-        raise ImportError(
-            "playwright is required for PNG rendering. "
-            "Install it with:\n"
-            "  pip install playwright\n"
-            "  playwright install chromium"
-        ) from exc
+        raise ImportError("playwright is required for PNG rendering") from exc
 
     html = build_html(
         crystal,
@@ -488,13 +341,8 @@ def render_to_png(
     except OSError:
         pass
 
-    logger.info("Rendered structure to %s", output_path)
+    logger.debug("Rendered structure to %s", output_path)
     return output_path
-
-
-# ---------------------------------------------------------------------------
-# PNG rendering (async)
-# ---------------------------------------------------------------------------
 
 
 async def async_render_to_png(
@@ -514,22 +362,11 @@ async def async_render_to_png(
     timeout: int = 30000,
     rotate: tuple[float, float, float] | None = None,
 ) -> str:
-    """Async version of :func:`render_to_png`.
-
-    Uses Playwright's async API so it can be called from within an
-    ``asyncio`` event loop (e.g. inside an MCP server or LangGraph workflow).
-
-    Parameters are identical to :func:`render_to_png`.
-    """
+    """Async version of render_to_png."""
     try:
         from playwright.async_api import async_playwright
     except ImportError as exc:
-        raise ImportError(
-            "playwright is required for PNG rendering. "
-            "Install it with:\n"
-            "  pip install playwright\n"
-            "  playwright install chromium"
-        ) from exc
+        raise ImportError("playwright is required for PNG rendering") from exc
 
     html = build_html(
         crystal,
@@ -573,13 +410,8 @@ async def async_render_to_png(
     except OSError:
         pass
 
-    logger.info("Rendered structure to %s (async)", output_path)
+    logger.debug("Rendered structure to %s (async)", output_path)
     return output_path
-
-
-# ---------------------------------------------------------------------------
-# File-based rendering
-# ---------------------------------------------------------------------------
 
 
 def render_file_to_png(
@@ -594,54 +426,24 @@ def render_file_to_png(
     metal_scale: float = 0.75,
     label_size: int = 14,
     show_formula: bool = True,
-    show_unit_cell: bool = False,
+    show_unit_cell: bool | None = None,
     bg_color: str = "white",
     timeout: int = 30000,
     rotate: tuple[float, float, float] | None = None,
 ) -> str:
     """Read a structure file and render it to PNG.
 
-    This is the main entry point for file-based usage. Accepts CIF and
-    XYZ files.
-
-    Parameters
-    ----------
-    input_file : str
-        Path to the input structure file (CIF or XYZ).
-    output_file : str
-        Path to the output PNG file.
-    label_mode : str
-        ``"sequential"``, ``"per_element"``, or ``"none"``.
-    width, height : int
-        Image dimensions in pixels.
-    representation : str
-        ``"ball_stick"``, ``"stick"``, or ``"sphere"``.
-    sphere_scale, stick_scale, metal_scale : float
-        Scaling factors.
-    label_size : int
-        Font size for atom labels.
-    show_formula : bool
-        Whether to show the chemical formula.
-    show_unit_cell : bool
-        Whether to draw unit cell edges (for periodic structures).
-    bg_color : str
-        Background color.
-    timeout : int
-        Playwright timeout in ms.
-    rotate : tuple of (float, float, float) or None
-        Rotation angles in degrees as (x, y, z).
-
-    Returns
-    -------
-    str
-        Absolute path to the output PNG file.
+    Accepts CIF and XYZ files.
     """
     crystal = _load_file(input_file)
 
-    # Auto-enable unit cell for CIF files (periodic structures)
+    # Auto-enable unit cell for CIF files (periodic structures) unless
+    # the caller explicitly passed show_unit_cell=False.
     ext = Path(input_file).suffix.lower()
-    if ext == ".cif" and not show_unit_cell:
+    if ext == ".cif" and show_unit_cell is None:
         show_unit_cell = True
+    elif show_unit_cell is None:
+        show_unit_cell = False
 
     return render_to_png(
         crystal,
@@ -674,20 +476,21 @@ async def async_render_file_to_png(
     metal_scale: float = 0.75,
     label_size: int = 14,
     show_formula: bool = True,
-    show_unit_cell: bool = False,
+    show_unit_cell: bool | None = None,
     bg_color: str = "white",
     timeout: int = 30000,
     rotate: tuple[float, float, float] | None = None,
 ) -> str:
-    """Async version of :func:`render_file_to_png`.
-
-    Parameters are identical to :func:`render_file_to_png`.
-    """
+    """Async version of render_file_to_png."""
     crystal = _load_file(input_file)
 
+    # Auto-enable unit cell for CIF files (periodic structures) unless
+    # the caller explicitly passed show_unit_cell=False.
     ext = Path(input_file).suffix.lower()
-    if ext == ".cif" and not show_unit_cell:
+    if ext == ".cif" and show_unit_cell is None:
         show_unit_cell = True
+    elif show_unit_cell is None:
+        show_unit_cell = False
 
     return await async_render_to_png(
         crystal,
@@ -708,11 +511,6 @@ async def async_render_file_to_png(
     )
 
 
-# ---------------------------------------------------------------------------
-# File loading helper
-# ---------------------------------------------------------------------------
-
-
 def _load_file(filepath: str) -> Crystal:
     """Load a CIF or XYZ file into a Crystal object."""
     from mofforge.core.crystal import Crystal
@@ -726,4 +524,4 @@ def _load_file(filepath: str) -> Crystal:
         species, coords = read_xyz(filepath)
         return Crystal.from_xyz(species, coords, name=Path(filepath).stem)
     else:
-        raise ValueError(f"Unsupported file format: {ext!r}. Supported formats: .cif, .xyz")
+        raise ValueError(f"Unsupported file format: {ext!r}")

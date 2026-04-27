@@ -1,9 +1,4 @@
-"""Fragment loading from XYZ files with anchor-atom tag handling.
-
-Anchor atoms are identified by a '!' suffix on the species label (e.g. 'H!').
-These atoms mark sites where replacements will be installed during
-replace_pattern operations.
-"""
+"""Fragment loading from XYZ files with anchor-atom ('!' suffix) handling."""
 
 from __future__ import annotations
 
@@ -19,15 +14,7 @@ logger = logging.getLogger("mofforge")
 
 
 def anchor_indices(species: list[str], r_tag: str | None = None) -> list[int]:
-    """Return indices of anchor atoms (species ending with the anchor tag).
-
-    Args:
-        species: List of species labels.
-        r_tag: The anchor tag character; defaults to config.r_tag.
-
-    Returns:
-        List of indices of anchor atoms.
-    """
+    """Return indices of anchor atoms (species ending with the anchor tag)."""
     if r_tag is None:
         r_tag = config.r_tag
 
@@ -42,17 +29,7 @@ def anchor_indices(species: list[str], r_tag: str | None = None) -> list[int]:
 
 
 def untag_anchor(species: list[str], r_tag: str | None = None) -> list[str]:
-    """Remove anchor tags from species labels.
-
-    'H!' becomes 'H', 'C!' becomes 'C', etc.
-
-    Args:
-        species: List of species labels.
-        r_tag: The anchor tag character; defaults to config.r_tag.
-
-    Returns:
-        New list with tags removed.
-    """
+    """Remove anchor tags from species labels ('H!' -> 'H', 'C!' -> 'C')."""
     if r_tag is None:
         r_tag = config.r_tag
 
@@ -66,14 +43,7 @@ def untag_anchor(species: list[str], r_tag: str | None = None) -> list[str]:
 
 
 def subtract_anchor(crystal: Crystal) -> Crystal:
-    """Return a copy of the crystal with anchor atoms removed.
-
-    Args:
-        crystal: Crystal potentially containing anchor atoms.
-
-    Returns:
-        New Crystal with anchor atoms deleted.
-    """
+    """Return a copy of the crystal with anchor atoms removed."""
     r_indices = set(anchor_indices(crystal.species))
     keep = [i for i in range(crystal.n_atoms) if i not in r_indices]
     return crystal[keep]
@@ -87,21 +57,8 @@ def fragment(
 ) -> Crystal:
     """Load a molecular fragment from an XYZ file.
 
-    The fragment is loaded as a Crystal with an arbitrary large cubic lattice.
     Bonds are inferred (non-periodic). Atoms are sorted by bond degree
-    (highest first), with anchor atoms moved to the end of the list.
-
-    Args:
-        name: XYZ filename (e.g. 'phenylene.xyz'). If None, returns an
-            empty Crystal (for "replace-with-nothing" operations).
-        fragment_path: Directory containing fragment XYZ files. Defaults to
-            config.moiety_path.
-        bonding_rules: Custom bonding rules. If None, uses tagged defaults.
-        presort: If True, sort non-anchor atoms by bond degree (descending).
-            Anchor atoms are always moved to the end regardless.
-
-    Returns:
-        Crystal with inferred bonds and sorted atoms.
+    (highest first), with anchor atoms moved to the end.
     """
     if name is None:
         return Crystal.empty(name="nothing")
@@ -110,10 +67,7 @@ def fragment(
     if fragment_path is None:
         fragment_path = config.moiety_path
     if fragment_path is None:
-        raise ValueError(
-            "No fragment path specified. Pass 'fragment_path' argument or call "
-            "mofforge.set_paths(moieties='/path/to/moieties') first."
-        )
+        raise ValueError("No fragment path configured.")
     filepath = Path(fragment_path) / name
 
     # Read XYZ file

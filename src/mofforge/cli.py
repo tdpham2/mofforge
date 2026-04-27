@@ -61,14 +61,11 @@ def search(parent, query, disconnected, fragment_path, verbose):
 
     from mofforge.search.search import find_pattern
 
-    # Load parent
     click.echo(f"Loading parent: {parent}")
     xtal = _load_parent(parent)
 
-    # Load query
     q = _load_frag(query, fragment_path=fragment_path)
 
-    # Search
     result = find_pattern(q, xtal, disconnected_component=disconnected)
 
     click.echo(f"Results: {result}")
@@ -96,19 +93,15 @@ def replace_cmd(
     from mofforge.replace.replace import replace_pattern
     from mofforge.search.search import find_pattern
 
-    # Load parent
     click.echo(f"Loading parent: {parent}")
     xtal = _load_parent(parent)
 
-    # Load fragments
     q = _load_frag(query, fragment_path=fragment_path)
     r = _load_frag(replacement, fragment_path=fragment_path)
 
-    # Search
     result = find_pattern(q, xtal)
     click.echo(f"Found {result.nb_isomorphisms()} matches at {result.nb_locations()} locations")
 
-    # Replace
     kwargs = {"verbose": True}
     if nb_loc > 0:
         kwargs["nb_loc"] = nb_loc
@@ -143,18 +136,14 @@ def remove_cmd(parent, guest, output, fragment_path, verbose):
     from mofforge.replace.replace import replace_pattern
     from mofforge.search.search import find_pattern
 
-    # Load parent
     click.echo(f"Loading parent: {parent}")
     xtal = _load_parent(parent)
 
-    # Load guest
     g = _load_frag(guest, fragment_path=fragment_path)
 
-    # Search for guest molecules
     result = find_pattern(g, xtal, disconnected_component=True)
     click.echo(f"Found {result.nb_locations()} guest molecule(s)")
 
-    # Remove
     child = replace_pattern(result, None)
     child.write_cif(output)
     click.echo(f"Output written to: {output}")
@@ -188,18 +177,12 @@ def batch_cmd(config_path, verbose):
 
     results = run_batch(config_path)
 
-    # Print summary
     click.echo(f"\nBatch Results ({len(results)} structures):")
     for r in results:
         status = "OK" if r.success else f"FAILED: {r.error}"
         click.echo(f"  {r.parent_name}: {status}")
         if r.output_path:
             click.echo(f"    -> {r.output_path}")
-
-
-# ------------------------------------------------------------------ #
-# Render command
-# ------------------------------------------------------------------ #
 
 
 @main.command("render")
@@ -273,11 +256,6 @@ def render_cmd(
     click.echo(f"Output written to: {output_path}")
 
 
-# ------------------------------------------------------------------ #
-# Build commands
-# ------------------------------------------------------------------ #
-
-
 @main.command("build")
 @click.option(
     "--backend",
@@ -309,13 +287,11 @@ def build_cmd(backend, topology, node, edge, output_dir, tobacco_path, parallel,
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
-    # Register building blocks
     for n in node:
         builder.add_node(n)
     for e in edge:
         builder.add_edge(e)
 
-    # Build
     click.echo(f"Building MOF with {backend} backend (topology={topology})")
     build_kwargs = {}
     if parallel:

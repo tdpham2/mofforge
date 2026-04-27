@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example 7: Symmetry-Aware Replacement
+"""Symmetry-Aware Replacement
 
 Demonstrates substructure replacement on a crystal structure while
 examining the symmetry properties, and optionally building a supercell.
@@ -8,12 +8,12 @@ In mofforge we use pymatgen's SpacegroupAnalyzer for symmetry analysis
 and Structure.make_supercell for replication.
 
 Input files:
-    crystals/NiPyC_fragment_trouble.cif  - Parent crystal (NiPyC)
-    moieties/PyC.xyz                     - Query (PyC linker with H! tag)
-    moieties/PyC-CH3.xyz                 - Replacement (PyC with methyl group)
+    data/crystals/NiPyC_fragment_trouble.cif  - Parent crystal (NiPyC)
+    data/moieties/PyC.xyz                     - Query (PyC linker with H! tag)
+    data/moieties/PyC-CH3.xyz                 - Replacement (PyC with methyl group)
 
 Usage:
-    python symmetry_analysis.py
+    python search/symmetry_analysis.py
 """
 
 from pathlib import Path
@@ -21,8 +21,9 @@ from pathlib import Path
 from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
 
 SCRIPT_DIR = Path(__file__).parent
-CRYSTAL_DIR = SCRIPT_DIR / "data" / "crystals"
-MOIETY_DIR = SCRIPT_DIR / "data" / "moieties"
+EXAMPLES_DIR = SCRIPT_DIR.parent
+CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
+MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
 
 
 def run_symmetry_example():

@@ -1,15 +1,4 @@
-"""mofforge: Build and modify atomistic crystal structure models.
-
-A Python package for constructing and modifying crystal structures,
-especially metal-organic frameworks (MOFs). Provides MOF construction
-from topology + building blocks (via TOBACCO and Pormake backends),
-pattern matching via VF2 graph isomorphism, and fragment replacement
-via SVD-based Procrustes alignment.
-
-Features include MOF construction, VF2 algorithm, SMARTS-like pattern
-matching, batch processing, multi-step pipelines, structure validation,
-and provenance tracking.
-"""
+"""mofforge: Build and modify atomistic crystal structure models."""
 
 try:
     from importlib.metadata import version as _get_version
@@ -29,6 +18,7 @@ from mofforge.adsorbate import (
 from mofforge.batch import run_batch
 from mofforge.build import (
     BuildConfig,
+    BuilderBackend,
     BuildingBlock,
     BuildResult,
     ConfigError,
@@ -47,15 +37,24 @@ from mofforge.io.cif import read_cif, write_cif
 from mofforge.io.xyz import read_xyz, write_xyz
 from mofforge.pipeline import Pipeline
 from mofforge.provenance import Provenance
-from mofforge.replace.alignment import Alignment
+from mofforge.replace.alignment import Alignment, apply_alignment, get_r2p_alignment
 from mofforge.replace.conglomerate import reassemble
 from mofforge.replace.replace import replace_pattern, swap
+from mofforge.search.isomorphism import find_subgraph_isomorphisms
 from mofforge.search.search import MatchResult, find_pattern
 from mofforge.smarts import parse_smarts, smarts_search
-from mofforge.utils.config import config, set_paths
+from mofforge.utils.config import clean_species, config, set_paths
+from mofforge.utils.periodic import min_image_distance, nearest_image, wrap_coords
 from mofforge.validation import ValidationReport, validate_structure
 from mofforge.vis import (
+    DEFAULT_COLOR,
+    JMOL_COLORS,
+    METALS,
+    async_render_file_to_png,
+    async_render_to_png,
     build_html,
+    generate_atom_labels,
+    get_element_color,
     render_file_to_png,
     render_to_png,
 )
@@ -67,9 +66,13 @@ __all__ = [
     "BondingRule",
     "BuildConfig",
     "BuildResult",
+    "BuilderBackend",
     "BuildingBlock",
     "ConfigError",
     "Crystal",
+    "DEFAULT_COLOR",
+    "JMOL_COLORS",
+    "METALS",
     "MOFBuilder",
     "MatchResult",
     "Pipeline",
@@ -77,14 +80,24 @@ __all__ = [
     "Topology",
     "ValidationReport",
     "anchor_indices",
+    "apply_alignment",
+    "async_render_file_to_png",
+    "async_render_to_png",
     "available_molecules",
     "build_html",
+    "clean_species",
     "config",
     "find_adsorption_sites",
     "find_pattern",
+    "find_subgraph_isomorphisms",
     "fragment",
+    "generate_atom_labels",
+    "get_element_color",
     "get_molecule",
+    "get_r2p_alignment",
     "infer_bonds",
+    "min_image_distance",
+    "nearest_image",
     "parse_smarts",
     "place_adsorbate",
     "read_cif",
@@ -101,6 +114,7 @@ __all__ = [
     "swap",
     "untag_anchor",
     "validate_structure",
+    "wrap_coords",
     "write_cif",
     "write_xyz",
 ]

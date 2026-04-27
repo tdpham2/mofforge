@@ -1,22 +1,8 @@
-"""Built-in adsorbate molecule geometries.
-
-Provides pre-defined geometries for common gas-phase adsorbate molecules
-used in MOF adsorption studies.  Each molecule is specified as a list of
-(element, x, y, z) tuples in Angstroms, centered at the origin.
-
-All geometries use experimental or NIST CCCBDB equilibrium bond lengths.
-"""
+"""Built-in adsorbate molecule geometries for MOF adsorption studies."""
 
 from __future__ import annotations
 
 import numpy as np
-
-# ---------------------------------------------------------------------------
-# Molecule library
-# ---------------------------------------------------------------------------
-# Each entry maps a canonical name to a list of (species, x, y, z) tuples.
-# Coordinates are in Angstroms and centered at the geometric center.
-# ---------------------------------------------------------------------------
 
 _MOLECULES: dict[str, list[tuple[str, float, float, float]]] = {
     # --- Monatomic / noble gases ---
@@ -146,29 +132,12 @@ _ALIASES: dict[str, str] = {
 
 
 def available_molecules() -> list[str]:
-    """Return sorted list of available molecule names.
-
-    Returns:
-        List of canonical molecule names (e.g. ``['Ar', 'C2H2', 'CH4', ...]``).
-    """
+    """Return sorted list of available molecule names."""
     return sorted(_MOLECULES.keys())
 
 
 def get_molecule(name: str) -> tuple[list[str], np.ndarray]:
-    """Get the geometry of a predefined adsorbate molecule.
-
-    Args:
-        name: Molecule name (e.g. ``"CO2"``, ``"H2O"``, ``"methane"``).
-            Case-insensitive; common aliases are accepted.
-
-    Returns:
-        Tuple of (species_list, coordinates) where species_list is a list
-        of element symbols and coordinates is an (N, 3) array in Angstroms,
-        centered at the geometric center.
-
-    Raises:
-        ValueError: If molecule name is not recognized.
-    """
+    """Get the geometry of a predefined adsorbate molecule."""
     # Try direct lookup first (case-sensitive)
     if name in _MOLECULES:
         atoms = _MOLECULES[name]
@@ -189,9 +158,4 @@ def get_molecule(name: str) -> tuple[list[str], np.ndarray]:
     if name_lower in _ALIASES:
         return get_molecule(_ALIASES[name_lower])
 
-    available = ", ".join(available_molecules())
-    raise ValueError(
-        f"Unknown molecule '{name}'. "
-        f"Available molecules: {available}. "
-        f"You can also use common aliases like 'water', 'methane', etc."
-    )
+    raise ValueError(f"Unknown molecule '{name}'")
