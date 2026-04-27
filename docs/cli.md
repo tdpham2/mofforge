@@ -14,6 +14,10 @@ mofforge --version
 - [remove](#remove) — Remove guest molecules
 - [validate](#validate) — Validate a crystal structure
 - [batch](#batch) — Batch process multiple structures
+- [build](#build) — Build a MOF from topology + building blocks
+- [build-status](#build-status) — Show backend status
+- [build-list](#build-list) — List topologies, nodes, or edges
+- [render](#render) — Render a structure to PNG
 
 ---
 
@@ -328,6 +332,152 @@ Batch Results (15 structures):
 
 ---
 
+## build
+
+Build a MOF from a topology template and building blocks. See the [MOF Construction Guide](build.md) for full details.
+
+```
+mofforge build [OPTIONS]
+```
+
+**Required:**
+
+| Option | Description |
+|--------|-------------|
+| `-t, --topology TEXT` | Topology name (e.g., `pcu`, `dia`) |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-b, --backend [tobacco\|pormake]` | `tobacco` | Which construction backend to use |
+| `-n, --node PATH` | | Node building block file (can be repeated) |
+| `-e, --edge PATH` | | Edge building block file (can be repeated) |
+| `-o, --output DIR` | `.` | Output directory |
+| `--tobacco-path PATH` | from config | Override TOBACCO installation directory |
+| `--parallel` | off | Run TOBACCO in parallel mode |
+| `-v, --verbose` | off | Enable verbose output |
+
+**Examples:**
+
+```bash
+# Build with TOBACCO
+mofforge build -b tobacco -t pcu -n node.cif -e edge.cif -o ./output
+
+# Build with Pormake
+mofforge build -b pormake -t pcu -n node.cif -e edge.xyz -o ./output
+
+# Multiple building blocks
+mofforge build -b tobacco -t pcu -n node_A.cif -n node_B.cif -e edge.cif
+
+# Parallel execution (TOBACCO only)
+mofforge build -b tobacco -t pcu -n node.cif -e edge.cif --parallel
+```
+
+---
+
+## build-status
+
+Show the status of a build backend (number of templates, nodes, edges, outputs, and configuration).
+
+```
+mofforge build-status [OPTIONS]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-b, --backend [tobacco\|pormake]` | `tobacco` | Backend to check |
+| `--tobacco-path PATH` | from config | Override TOBACCO directory |
+| `-v, --verbose` | off | Verbose output |
+
+**Example:**
+
+```bash
+mofforge build-status -b tobacco
+```
+
+---
+
+## build-list
+
+List available topologies, nodes, or edges for a backend.
+
+```
+mofforge build-list [OPTIONS]
+```
+
+**Required:**
+
+| Option | Description |
+|--------|-------------|
+| `--type [topologies\|nodes\|edges]` | What to list |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-b, --backend [tobacco\|pormake]` | `tobacco` | Backend to query |
+| `--tobacco-path PATH` | from config | Override TOBACCO directory |
+| `-v, --verbose` | off | Verbose output |
+
+**Examples:**
+
+```bash
+# List topologies
+mofforge build-list -b pormake --type topologies
+
+# List registered nodes
+mofforge build-list -b tobacco --type nodes
+```
+
+---
+
+## render
+
+Render a crystal structure (CIF or XYZ) to a PNG image using 3Dmol.js and Playwright.
+
+```
+mofforge render [OPTIONS]
+```
+
+**Required:**
+
+| Option | Description |
+|--------|-------------|
+| `-i, --input TEXT` | Path to the CIF or XYZ file |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-o, --output TEXT` | `structure.png` | Output PNG file path |
+| `--label-mode [sequential\|per_element\|none]` | `sequential` | Atom label style |
+| `--representation [ball_stick\|stick\|sphere]` | `ball_stick` | Visual representation |
+| `--width INT` | `800` | Image width in pixels |
+| `--height INT` | `600` | Image height in pixels |
+| `--show-unit-cell` | auto | Show unit cell edges (auto-enabled for CIF) |
+| `--show-formula` | on | Show chemical formula overlay |
+| `--bg-color TEXT` | `white` | Background color |
+| `--label-size INT` | `14` | Atom label font size |
+
+**Examples:**
+
+```bash
+# Render a CIF file
+mofforge render -i IRMOF-1.cif -o irmof1.png
+
+# Render with specific options
+mofforge render -i structure.cif -o output.png \
+    --representation sphere \
+    --width 1200 --height 900 \
+    --label-mode per_element
+
+# Render an XYZ fragment
+mofforge render -i fragment.xyz -o fragment.png --label-mode none
+```
+
+---
+
 ## Common Workflows
 
 ### Substructure search only
@@ -359,6 +509,28 @@ mofforge validate clean.cif
 
 ```bash
 mofforge batch -c my_config.yaml -v
+```
+
+### Build a MOF and render it
+
+```bash
+mofforge build -b pormake -t pcu -n node.cif -e edge.cif -o ./output
+mofforge render -i ./output/pcu_node_edge.cif -o mof_preview.png
+```
+
+### Build, then functionalize
+
+```bash
+# Build the base MOF
+mofforge build -b tobacco -t pcu -n Zn_pw.cif -e BDC.cif -o ./output
+
+# Functionalize linkers in the built MOF
+mofforge replace \
+    -p ./output/pcu_MOF.cif \
+    -q moieties/2-!-p-phenylene.xyz \
+    -r moieties/2-amino-p-phenylene.xyz \
+    --nb-loc 6 \
+    -o functionalized.cif
 ```
 
 ---

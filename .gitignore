@@ -34,3 +34,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime artifacts
+runtime.log
+tobacco_output/
+
+# User-local builder config (contains machine-specific paths)
+mofforge.toml
