@@ -78,6 +78,16 @@ class Pipeline:
         )
         return self
 
+    def desolvate(self, **kwargs) -> Pipeline:
+        """Queue an automatic solvent removal step."""
+        self._steps.append(
+            PipelineStep(
+                operation="desolvate",
+                kwargs=kwargs,
+            )
+        )
+        return self
+
     def validate(self, **kwargs) -> Pipeline:
         """Queue a validation step."""
         self._steps.append(
@@ -158,6 +168,23 @@ class Pipeline:
                         query=guest_name,
                         replacement=None,
                         operation="remove",
+                    )
+                )
+
+            elif step.operation == "desolvate":
+                from mofforge.solvent.removal import remove_solvent
+
+                sol_result = remove_solvent(current, **step.kwargs)
+                current = sol_result.crystal
+
+                if current.n_bonds == 0 and current.n_atoms > 0:
+                    current = infer_bonds(current, periodic=True)
+
+                provenance_chain = provenance_chain.chain(
+                    Provenance(
+                        parent=current.name,
+                        operation="desolvate",
+                        parameters=step.kwargs,
                     )
                 )
 

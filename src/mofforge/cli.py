@@ -150,6 +150,46 @@ def remove_cmd(parent, guest, output, fragment_path, verbose):
     click.echo(f"  Atoms: {child.n_atoms} (removed {xtal.n_atoms - child.n_atoms})")
 
 
+@main.command("desolvate")
+@click.option("-p", "--parent", required=True, help="Path to parent CIF file.")
+@click.option("-o", "--output", default="desolvated.cif", help="Output CIF file path.")
+@click.option("--min-atoms", default=1, type=int, help="Min atoms for a component to be framework.")
+@click.option("--keep-metals", is_flag=True, help="Keep metal-containing components.")
+@click.option(
+    "--n-frameworks", default=None, type=int, help="Number of framework components to keep."
+)
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def desolvate_cmd(parent, output, min_atoms, keep_metals, n_frameworks, verbose):
+    """Remove all uncoordinated solvent molecules from a crystal structure."""
+    _setup_logging(verbose)
+
+    from collections import Counter
+
+    from mofforge.solvent.removal import remove_solvent
+
+    click.echo(f"Loading parent: {parent}")
+    xtal = _load_parent(parent)
+
+    result = remove_solvent(
+        xtal,
+        min_atoms=min_atoms,
+        keep_metal_containing=keep_metals,
+        n_framework_components=n_frameworks,
+    )
+
+    result.crystal.write_cif(output)
+    click.echo(f"Output written to: {output}")
+    click.echo(f"  Atoms: {result.crystal.n_atoms} (removed {result.n_atoms_removed})")
+    click.echo(f"  Molecules removed: {result.n_components_removed}")
+    click.echo(f"  Framework components: {result.n_framework_components}")
+
+    if verbose and result.removed_molecules:
+        click.echo("  Removed species:")
+        formula_counts = Counter(m.formula for m in result.removed_molecules)
+        for formula, count in formula_counts.most_common():
+            click.echo(f"    {count}x {formula}")
+
+
 @main.command("validate")
 @click.argument("structure")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")

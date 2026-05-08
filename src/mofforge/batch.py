@@ -124,7 +124,7 @@ def _resolve_parent_paths(patterns: list[str]) -> list[Path]:
     return paths
 
 
-_VALID_OP_TYPES = ("replace", "remove", "validate")
+_VALID_OP_TYPES = ("replace", "remove", "validate", "desolvate")
 
 
 def _process_single(
@@ -171,6 +171,16 @@ def _process_single(
                 g = fragment(guest_name, fragment_path=config.moiety_path)
                 match = find_pattern(g, current, disconnected_component=True)
                 current = replace_pattern(match, None)
+
+                if current.n_bonds == 0 and current.n_atoms > 0:
+                    current = infer_bonds(current, periodic=True)
+
+            elif op_type == "desolvate":
+                from mofforge.solvent.removal import remove_solvent
+
+                kwargs = {k: v for k, v in op.items() if k != "type"}
+                sol_result = remove_solvent(current, **kwargs)
+                current = sol_result.crystal
 
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)

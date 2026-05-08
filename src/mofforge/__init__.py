@@ -43,6 +43,7 @@ from mofforge.replace.replace import replace_pattern, swap
 from mofforge.search.isomorphism import find_subgraph_isomorphisms
 from mofforge.search.search import MatchResult, find_pattern
 from mofforge.smarts import parse_smarts, smarts_search
+from mofforge.solvent import RemovedMolecule, SolventRemovalResult, remove_solvent
 from mofforge.utils.config import clean_species, config, set_paths
 from mofforge.utils.periodic import min_image_distance, nearest_image, wrap_coords
 from mofforge.validation import ValidationReport, validate_structure
@@ -103,13 +104,16 @@ __all__ = [
     "read_cif",
     "read_xyz",
     "reassemble",
+    "RemovedMolecule",
     "remove_bonds",
+    "remove_solvent",
     "render_file_to_png",
     "render_to_png",
     "replace_pattern",
     "run_batch",
     "set_paths",
     "smarts_search",
+    "SolventRemovalResult",
     "subtract_anchor",
     "swap",
     "untag_anchor",

@@ -235,6 +235,68 @@ def mofforge_remove(
 
 
 @mcp.tool(
+    name="mofforge_desolvate",
+    description=(
+        "Automatically identify and remove all uncoordinated solvent/guest "
+        "molecules from a MOF crystal structure. Unlike mofforge_remove, "
+        "this does not require specifying which solvent to remove."
+    ),
+)
+def mofforge_desolvate(
+    parent_cif: str,
+    output_cif: str = "desolvated.cif",
+    min_atoms: int = 1,
+    keep_metal_containing: bool = False,
+    n_framework_components: int | None = None,
+) -> str:
+    """Automatically remove solvent from a crystal structure.
+
+    Parameters
+    ----------
+    parent_cif : str
+        Absolute path to the parent crystal CIF file.
+    output_cif : str
+        Output CIF file path.
+    min_atoms : int
+        Minimum atoms for a component to be considered framework.
+    keep_metal_containing : bool
+        If True, keep components containing metal atoms.
+    n_framework_components : int | None
+        Number of framework components to keep (None = auto-detect).
+    """
+    from collections import Counter
+
+    from mofforge.solvent.removal import remove_solvent
+
+    xtal = _load_crystal(parent_cif)
+    result = remove_solvent(
+        xtal,
+        min_atoms=min_atoms,
+        keep_metal_containing=keep_metal_containing,
+        n_framework_components=n_framework_components,
+    )
+
+    output_path = _resolve_output(output_cif)
+    result.crystal.write_cif(output_path)
+
+    formula_counts = Counter(m.formula for m in result.removed_molecules)
+
+    return json.dumps(
+        {
+            "success": True,
+            "output_cif": output_path,
+            "atoms_before": result.n_atoms_original,
+            "atoms_after": result.crystal.n_atoms,
+            "atoms_removed": result.n_atoms_removed,
+            "molecules_removed": result.n_components_removed,
+            "framework_components": result.n_framework_components,
+            "removed_species": dict(formula_counts),
+        },
+        indent=2,
+    )
+
+
+@mcp.tool(
     name="mofforge_validate",
     description=(
         "Validate a crystal structure for steric clashes, unusual bond "
