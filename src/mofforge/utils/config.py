@@ -185,6 +185,7 @@ class MofforgeConfig:
     # Default data paths (None means no default; user must set explicitly)
     crystal_path: Path | None = field(default=None)
     moiety_path: Path | None = field(default=None)
+    csd_data_path: Path | None = field(default=None)
 
     @property
     def fragment_path(self) -> Path | None:
@@ -229,12 +230,15 @@ config = MofforgeConfig()
 def set_paths(
     crystals: str | Path | None = None,
     moieties: str | Path | None = None,
+    csd_data: str | Path | None = None,
 ) -> None:
     """Update global data directory paths."""
     if crystals is not None:
         config.crystal_path = Path(crystals)
     if moieties is not None:
         config.moiety_path = Path(moieties)
+    if csd_data is not None:
+        config.csd_data_path = Path(csd_data)
 
 
 # Regex to extract bare element symbol (e.g. "Zn2+" -> "Zn", "H!" -> "H")

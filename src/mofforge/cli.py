@@ -431,5 +431,48 @@ def build_list_cmd(backend, list_type, tobacco_path, verbose):
         click.echo(f"  {item}")
 
 
+@main.command("csd")
+@click.argument("query")
+@click.option(
+    "--field",
+    "-f",
+    type=click.Choice(["auto", "refcode", "name", "doi", "formula", "ccdc"]),
+    default="auto",
+    help="Field to search (default: auto-detect).",
+)
+@click.option("--limit", "-n", default=10, type=int, help="Max results to display.")
+@click.option("--data-path", default=None, help="Path to CSD TSV file (overrides config).")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def csd_cmd(query, field, limit, data_path, verbose):
+    """Look up MOF entries in the CSD database by name, DOI, or REFcode."""
+    _setup_logging(verbose)
+
+    from mofforge.csd import get_database
+    from mofforge.utils.config import set_paths
+
+    if data_path:
+        set_paths(csd_data=data_path)
+
+    try:
+        db = get_database()
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    result = db.search(query, field=field, limit=limit)
+
+    click.echo(f"CSD lookup: {result.n_matches} match(es) for '{query}' (field: {result.field})")
+    for rec in result.records:
+        click.echo(f"  {rec.refcode}: {rec.chemical_name_common or rec.chemical_name_systematic}")
+        if rec.doi:
+            click.echo(f"    DOI: {rec.doi}")
+        if rec.ccdc_number:
+            click.echo(f"    CCDC: {rec.ccdc_number}")
+        if verbose:
+            click.echo(f"    Formula: {rec.chemical_formula_moiety}")
+            click.echo(f"    Journal: {rec.journal} ({rec.year})")
+            click.echo(f"    Space group: {rec.space_group}")
+
+
 if __name__ == "__main__":
     main()
