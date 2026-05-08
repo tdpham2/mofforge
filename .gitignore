@@ -41,3 +41,6 @@ tobacco_output/
 
 # User-local builder config (contains machine-specific paths)
 mofforge.toml
+
+# CSD proprietary data (not distributable)
+external_data/

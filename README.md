@@ -50,6 +50,13 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 - MCP (Model Context Protocol) server exposing 8 tools for AI agent integration
 - Atom labels, unit cell edges, chemical formula overlay
 
+### CSD Database Lookup
+
+- Search the Cambridge Structural Database MOF subset by REFcode, DOI, CCDC number, chemical name, or formula
+- Auto-detection of query type (REFcode vs. DOI vs. name)
+- SQLite-backed caching for instant lookups after initial import
+- Requires a CSD license -- users export the MOF subset as a Tab Separated List from [ConQuest](https://www.ccdc.cam.ac.uk/solutions/software/conquest/)
+
 ### Pipeline & Automation
 
 - Multi-step Pipeline API -- chain operations fluently
@@ -156,6 +163,35 @@ smiles_to_tobacco_edge_cif(
 )
 ```
 
+### Look up a MOF in the CSD
+
+```python
+from mofforge.csd import get_database
+
+# Point to your CSD MOF subset export (Tab Separated List from ConQuest)
+db = get_database(data_path="/path/to/MOF_subset.tab")
+
+# Search by name -- auto-detects query type
+result = db.search("HKUST-1")
+for rec in result.records:
+    print(f"{rec.refcode}: {rec.chemical_name_common} (DOI: {rec.doi})")
+
+# Direct REFcode lookup
+rec = db.lookup_refcode("ABACUF")
+print(rec.summary())
+
+# Search by DOI
+result = db.search("10.1038/46248")
+```
+
+Or from the command line:
+
+```bash
+mofforge csd ABACUF --data-path /path/to/MOF_subset.tab
+mofforge csd "HKUST-1" -n 5
+mofforge csd "10.1038/46248" -v
+```
+
 ### Place adsorbates
 
 ```python
@@ -175,6 +211,7 @@ print(f"Placed {result.n_adsorbates} adsorbates, {result.clashes} clashes")
 
 - **[Python API Manual](docs/python_api.md)** -- complete guide to the search-and-replace system
 - **[MOF Construction Guide](docs/build.md)** -- building MOFs with TOBACCO and Pormake
+- **[CSD Lookup Guide](docs/csd.md)** -- searching the CSD MOF subset database
 - **[CLI Reference](docs/cli.md)** -- command-line interface reference
 
 ## Examples
@@ -268,6 +305,7 @@ mofforge/
 │   ├── search/        # VF2 isomorphism, MatchResult API
 │   ├── replace/       # Alignment, reassembly, replacement pipeline
 │   ├── build/         # MOF construction (MOFBuilder, TOBACCO, Pormake, SMILES-to-BB)
+│   ├── csd/           # CSD database lookup (REFcode, DOI, name search)
 │   ├── adsorbate/     # Adsorption site detection and adsorbate placement
 │   ├── io/            # CIF and XYZ I/O
 │   ├── vis/           # PNG rendering via 3Dmol.js + Playwright

@@ -16,6 +16,7 @@ from mofforge.adsorbate import (
     place_adsorbate,
 )
 from mofforge.batch import run_batch
+from mofforge.csd import CSDDatabase, CSDRecord, CSDSearchResult, get_database
 from mofforge.build import (
     BuildConfig,
     BuilderBackend,
@@ -70,6 +71,9 @@ __all__ = [
     "BuilderBackend",
     "BuildingBlock",
     "ConfigError",
+    "CSDDatabase",
+    "CSDRecord",
+    "CSDSearchResult",
     "Crystal",
     "DEFAULT_COLOR",
     "JMOL_COLORS",
@@ -93,6 +97,7 @@ __all__ = [
     "find_subgraph_isomorphisms",
     "fragment",
     "generate_atom_labels",
+    "get_database",
     "get_element_color",
     "get_molecule",
     "get_r2p_alignment",

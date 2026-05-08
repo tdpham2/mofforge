@@ -17,6 +17,7 @@ mofforge --version
 - [build](#build) — Build a MOF from topology + building blocks
 - [build-status](#build-status) — Show backend status
 - [build-list](#build-list) — List topologies, nodes, or edges
+- [csd](#csd) — Look up MOFs in the CSD database
 - [render](#render) — Render a structure to PNG
 
 ---
@@ -432,6 +433,92 @@ mofforge build-list -b tobacco --type nodes
 
 ---
 
+## csd
+
+Look up MOF entries in the CSD (Cambridge Structural Database) by REFcode, DOI, CCDC deposition number, chemical name, or formula.
+
+This command requires a CSD MOF subset data file exported as a **Tab Separated List** from the [ConQuest](https://www.ccdc.cam.ac.uk/solutions/software/conquest/) application. A CSD license from the CCDC is required. The data file is not distributed with mofforge.
+
+```
+mofforge csd QUERY [OPTIONS]
+```
+
+**Required:**
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Search term (REFcode, DOI, CCDC number, or name) |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-f, --field [auto\|refcode\|name\|doi\|formula\|ccdc]` | `auto` | Field to search (auto-detects by default) |
+| `-n, --limit INT` | `10` | Maximum number of results to display |
+| `--data-path TEXT` | from config | Path to the CSD Tab Separated List file |
+| `-v, --verbose` | off | Show additional details (formula, journal, space group) |
+
+**Auto-detection rules** (when `--field auto`):
+
+| Query pattern | Detected as |
+|---------------|-------------|
+| Starts with `10.` | DOI |
+| 5-8 digits | CCDC deposition number |
+| 3-8 uppercase letters + optional digits | REFcode (falls back to name search if no match) |
+| Anything else | Chemical name (substring search) |
+
+**Configuration:**
+
+The data file path can be set via (in order of priority):
+
+1. `--data-path` CLI option
+2. `set_paths(csd_data=...)` in Python
+3. `MOFFORGE_CSD_DATA_PATH` environment variable
+4. `[csd] data_path` in `mofforge.toml`
+
+On first use, mofforge parses the Tab Separated List and builds a local SQLite cache (`.db` file alongside the `.tab` file) for fast subsequent lookups.
+
+**Examples:**
+
+```bash
+# Look up a REFcode
+mofforge csd ABACUF --data-path /path/to/MOF_subset.tab
+
+# Search by common name
+mofforge csd "HKUST-1" -n 5
+
+# Search by DOI
+mofforge csd "10.1038/46248" -v
+
+# Search by CCDC deposition number
+mofforge csd 1100034 --field ccdc
+
+# Search by formula
+mofforge csd "C18 H6 Cu3" --field formula
+```
+
+**Output:**
+
+```
+CSD lookup: 1 match(es) for 'ABACUF' (field: refcode)
+  ABACUF: catena(Tetra-aqua-tetrakis(formato)-di-barium-copper)
+    CCDC: 1100034
+```
+
+With `-v`:
+
+```
+CSD lookup: 1 match(es) for 'ABACUF' (field: refcode)
+  ABACUF: catena(Tetra-aqua-tetrakis(formato)-di-barium-copper)
+    DOI: 10.1016/j.molstruc.2004.03.051
+    CCDC: 1100034
+    Formula: (C6 H14 Ba2 Cu1 O16)n
+    Journal: J.Mol.Struct. (2004)
+    Space group: P-1
+```
+
+---
+
 ## render
 
 Render a crystal structure (CIF or XYZ) to a PNG image using 3Dmol.js and Playwright.
@@ -516,6 +603,16 @@ mofforge batch -c my_config.yaml -v
 ```bash
 mofforge build -b pormake -t pcu -n node.cif -e edge.cif -o ./output
 mofforge render -i ./output/pcu_node_edge.cif -o mof_preview.png
+```
+
+### Look up a MOF and find related structures
+
+```bash
+# Find the REFcode for HKUST-1
+mofforge csd "HKUST-1" --data-path /path/to/MOF_subset.tab
+
+# Find all structures from a specific paper
+mofforge csd "10.1126/science.283.5405.1148" --field doi -v
 ```
 
 ### Build, then functionalize
