@@ -843,4 +843,4 @@ class TestLookupCLI:
             ],
         )
         assert result.exit_code == 0
-        assert "0 CSD match" in result.output
+        assert "0 total CSD match" in result.output

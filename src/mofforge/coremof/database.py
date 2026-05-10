@@ -383,11 +383,14 @@ class CoreMOFDatabase:
         )
 
     def _query(
-        self, sql: str, params: tuple = (), limit: int = 50
+        self, sql: str, params: tuple = (), limit: int | None = None
     ) -> list[CoreMOFRecord]:
         """Execute a query and return CoreMOFRecord list."""
         conn = self._ensure_db()
-        cursor = conn.execute(sql + " LIMIT ?", (*params, limit))
+        if limit is not None:
+            cursor = conn.execute(sql + " LIMIT ?", (*params, limit))
+        else:
+            cursor = conn.execute(sql, params)
         return [self._row_to_record(r) for r in cursor.fetchall()]
 
     # ------------------------------------------------------------------
@@ -422,7 +425,7 @@ class CoreMOFDatabase:
             (base_refcode,),
         )
 
-    def search_name(self, name: str, limit: int = 50) -> list[CoreMOFRecord]:
+    def search_name(self, name: str, limit: int | None = None) -> list[CoreMOFRecord]:
         """Substring search on MOF name."""
         pattern = f"%{name}%"
         return self._query(
@@ -431,7 +434,7 @@ class CoreMOFDatabase:
             limit=limit,
         )
 
-    def search_doi(self, doi: str, limit: int = 50) -> list[CoreMOFRecord]:
+    def search_doi(self, doi: str, limit: int | None = None) -> list[CoreMOFRecord]:
         """Exact or partial DOI match."""
         pattern = f"%{doi}%"
         return self._query(
@@ -440,24 +443,26 @@ class CoreMOFDatabase:
             limit=limit,
         )
 
-    def search_metal(self, metal: str, limit: int = 50) -> list[CoreMOFRecord]:
+    def search_metal(self, metal: str, limit: int | None = None) -> list[CoreMOFRecord]:
         """Find MOFs containing a specific metal element.
 
         Uses the normalized ``record_metals`` table for accurate matching
         (avoids substring false positives).
         """
         conn = self._ensure_db()
-        cursor = conn.execute(
+        sql = (
             "SELECT r.* FROM records r "
             "JOIN record_metals m ON r.coreid = m.coreid "
-            "WHERE m.metal = ? COLLATE NOCASE "
-            "LIMIT ?",
-            (metal.strip(), limit),
+            "WHERE m.metal = ? COLLATE NOCASE"
         )
+        if limit is not None:
+            cursor = conn.execute(sql + " LIMIT ?", (metal.strip(), limit))
+        else:
+            cursor = conn.execute(sql, (metal.strip(),))
         return [self._row_to_record(r) for r in cursor.fetchall()]
 
     def search_topology(
-        self, topology: str, nodes: str = "single", limit: int = 50
+        self, topology: str, nodes: str = "single", limit: int | None = None
     ) -> list[CoreMOFRecord]:
         """Find MOFs with a specific topology name.
 
@@ -476,7 +481,7 @@ class CoreMOFDatabase:
             limit=limit,
         )
 
-    def search_kh_class(self, kh_class: str, limit: int = 50) -> list[CoreMOFRecord]:
+    def search_kh_class(self, kh_class: str, limit: int | None = None) -> list[CoreMOFRecord]:
         """Find MOFs by KH gas storage classification."""
         return self._query(
             "SELECT * FROM records WHERE kh_class = ? COLLATE NOCASE",
@@ -485,7 +490,7 @@ class CoreMOFDatabase:
         )
 
     def search_oms(
-        self, has_oms: bool = True, limit: int = 50
+        self, has_oms: bool = True, limit: int | None = None
     ) -> list[CoreMOFRecord]:
         """Find MOFs with or without open metal sites."""
         return self._query(
@@ -517,7 +522,7 @@ class CoreMOFDatabase:
         has_oms: bool | None = None,
         kh_class: str | None = None,
         extension: str | None = None,
-        limit: int = 50,
+        limit: int | None = None,
     ) -> list[CoreMOFRecord]:
         """Screen MOFs by property ranges and categorical filters.
 
@@ -592,7 +597,7 @@ class CoreMOFDatabase:
         return self._query(base, tuple(all_params), limit=limit)
 
     def search(
-        self, query: str, field: str = "auto", limit: int = 50
+        self, query: str, field: str = "auto", limit: int | None = None
     ) -> CoreMOFSearchResult:
         """Unified search with auto-detection of query type.
 
@@ -742,7 +747,7 @@ def search_csd_name(
     name: str,
     coremof_db: CoreMOFDatabase | None = None,
     csd_db: "CSDDatabase | None" = None,
-    limit: int = 50,
+    limit: int | None = None,
 ) -> list[BridgeResult]:
     """Search for a MOF name in CSD and return CoreMOF entries for each match.
 
