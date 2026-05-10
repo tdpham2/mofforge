@@ -2,7 +2,7 @@
 
 from mofforge.build.base import BuilderBackend, BuildingBlock, BuildResult, Topology
 from mofforge.build.builder import MOFBuilder
-from mofforge.build.config import BuildConfig, ConfigError
+from mofforge.build.config import BuildConfig, ConfigError, validate_pormake
 from mofforge.build.smiles_to_bb import (
     ConnectionInfo,
     detect_carboxylic_groups,
@@ -24,4 +24,5 @@ __all__ = [
     "detect_connection_points",
     "smiles_to_pormake_edge_xyz",
     "smiles_to_tobacco_edge_cif",
+    "validate_pormake",
 ]

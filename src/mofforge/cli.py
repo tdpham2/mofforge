@@ -474,5 +474,104 @@ def csd_cmd(query, field, limit, data_path, verbose):
             click.echo(f"    Space group: {rec.space_group}")
 
 
+@main.command("coremof")
+@click.argument("query")
+@click.option(
+    "--field",
+    "-f",
+    type=click.Choice(["auto", "coreid", "refcode", "name", "doi", "metal", "topology"]),
+    default="auto",
+    help="Field to search (default: auto-detect).",
+)
+@click.option("--limit", "-n", default=10, type=int, help="Max results to display.")
+@click.option("--data-path", default=None, help="Path to CoRE MOF CSV file (overrides config).")
+@click.option("--bridge", is_flag=True, help="Treat QUERY as CSD refcode, return CoreMOF entries.")
+@click.option("-v", "--verbose", is_flag=True, help="Show extended properties.")
+def coremof_cmd(query, field, limit, data_path, bridge, verbose):
+    """Search the CoRE MOF database for simulation-ready structures."""
+    _setup_logging(verbose)
+
+    from mofforge.coremof import get_database, csd_to_coremof
+    from mofforge.utils.config import set_paths
+
+    if data_path:
+        set_paths(coremof_data=data_path)
+
+    try:
+        db = get_database()
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    if bridge:
+        records = csd_to_coremof(query, db=db)
+        click.echo(f"CoreMOF bridge: {len(records)} match(es) for CSD refcode '{query}'")
+        for rec in records:
+            click.echo(f"  {rec.coreid}")
+            click.echo(f"    Refcode:   {rec.refcode}")
+            click.echo(f"    Extension: {rec.extension}")
+            click.echo(f"    Metals:    {rec.metal_types}")
+            if verbose:
+                click.echo(rec.properties_summary())
+        return
+
+    result = db.search(query, field=field, limit=limit)
+
+    click.echo(
+        f"CoreMOF lookup: {result.n_matches} match(es) "
+        f"for '{query}' (field: {result.field})"
+    )
+    for rec in result.records:
+        click.echo(f"  {rec.summary()}")
+        if verbose:
+            click.echo(rec.properties_summary())
+            click.echo()
+
+
+@main.command("lookup")
+@click.argument("name")
+@click.option("--limit", "-n", default=10, type=int, help="Max CSD results to return.")
+@click.option("--csd-data-path", default=None, help="Path to CSD TSV file.")
+@click.option("--coremof-data-path", default=None, help="Path to CoRE MOF CSV file.")
+@click.option("-v", "--verbose", is_flag=True, help="Show extended CoreMOF properties.")
+def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
+    """Search CSD by MOF name and return CoreMOF simulation IDs.
+
+    Chains a CSD name search with CoreMOF refcode lookup: for each CSD
+    record found, displays all corresponding CoreMOF entries with their
+    coreid identifiers for simulation.
+    """
+    _setup_logging(verbose)
+
+    from mofforge.coremof import search_csd_name
+    from mofforge.utils.config import set_paths
+
+    if csd_data_path:
+        set_paths(csd_data=csd_data_path)
+    if coremof_data_path:
+        set_paths(coremof_data=coremof_data_path)
+
+    try:
+        results = search_csd_name(name, limit=limit)
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    total_csd = len(results)
+    total_coremof = sum(len(br.coremof_records) for br in results)
+    click.echo(
+        f"Lookup '{name}': {total_csd} CSD match(es), "
+        f"{total_coremof} CoreMOF entry(ies)"
+    )
+    click.echo()
+
+    for br in results:
+        click.echo(br.summary())
+        if verbose and br.coremof_records:
+            for rec in br.coremof_records:
+                click.echo(rec.properties_summary())
+        click.echo()
+
+
 if __name__ == "__main__":
     main()

@@ -207,14 +207,20 @@ class TestMOFBuilderMakeBlock:
         assert block.name == "Zn_paddle"
         assert block.role == "node"
 
-    def test_smiles_source_truncates_name(self):
-        """Name is truncated from SMILES string."""
+    def test_smiles_source_generates_unique_name(self):
+        """Name derived from SMILES includes a hash to avoid collisions."""
         from mofforge.build.builder import MOFBuilder
 
         smiles = "c1ccc(cc1)c1ccc(cc1)C(=O)O"
         block = MOFBuilder._make_block("edge", smiles, None, [0, 6])
-        assert len(block.name) <= 20
+        # Name is prefix + "_" + 8-char hash
+        assert "_" in block.name
         assert block.connection_points == [0, 6]
+
+        # Two different SMILES with the same 12-char prefix get different names
+        smiles2 = "c1ccc(cc1)c1ccc(cc1)N"
+        block2 = MOFBuilder._make_block("edge", smiles2, None, [0, 6])
+        assert block.name != block2.name
 
     def test_explicit_name_used(self):
         """Explicit name overrides inference."""

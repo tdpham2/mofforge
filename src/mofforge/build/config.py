@@ -136,3 +136,23 @@ class BuildConfig:
     def validate_tobacco(self) -> None:
         """Raise :class:`ConfigError` if ``tobacco_path`` is invalid."""
         self.resolve_tobacco_path()
+
+
+def validate_pormake() -> list[str]:
+    """Validate that pormake is importable and return any errors."""
+    errors: list[str] = []
+    try:
+        import pormake  # noqa: F401
+    except ImportError:
+        errors.append(
+            "pormake is not installed.  Install it with:  pip install pormake"
+        )
+        return errors
+
+    try:
+        db = pormake.Database()
+        _ = db.topology_list
+    except Exception as exc:
+        errors.append(f"pormake is installed but database init failed: {exc}")
+
+    return errors
