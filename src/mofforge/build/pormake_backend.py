@@ -55,10 +55,15 @@ class PormakeBackend:
         self._registered_nodes: dict[str, BuildingBlock] = {}
         self._registered_edges: dict[str, BuildingBlock] = {}
 
+        # Cached pormake Database (lazy-initialised)
+        self._db: object | None = None
+
     def _get_database(self):  # noqa: ANN202
-        """Return a pormake.Database instance."""
-        pm = _get_pormake()
-        return pm.Database()
+        """Return a (cached) pormake.Database instance."""
+        if self._db is None:
+            pm = _get_pormake()
+            self._db = pm.Database()
+        return self._db
 
     def _load_pormake_bb(self, block: BuildingBlock):  # noqa: ANN202
         """Convert a :class:`BuildingBlock` into a ``pormake.BuildingBlock``."""
@@ -73,8 +78,8 @@ class PormakeBackend:
         try:
             db = self._get_database()
             return db.get_bb(block.name)
-        except Exception:
-            logger.debug("Failed to load '%s' from pormake database", block.name, exc_info=True)
+        except (KeyError, ValueError):
+            logger.debug("'%s' not found in pormake database", block.name, exc_info=True)
 
         raise FileNotFoundError(
             f"Building block '{block.name}' not found as file ({src}) or in the pormake database."
@@ -85,12 +90,12 @@ class PormakeBackend:
         topology: Topology,
         nodes: list[BuildingBlock],
         edges: list[BuildingBlock],
-        output_dir: Path,
+        output_dir: Path | None = None,
         **options: Any,
     ) -> BuildResult:
         """Build a MOF using pormake."""
         pm = _get_pormake()
-        output_dir = Path(output_dir).resolve()
+        output_dir = Path(output_dir).resolve() if output_dir is not None else self._output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
         errors: list[str] = []

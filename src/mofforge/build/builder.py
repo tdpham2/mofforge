@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 from typing import Any, Literal
@@ -191,8 +192,10 @@ class MOFBuilder:
             if p.suffix in (".cif", ".xyz", ".mol2"):
                 name = p.stem
             else:
-                # Assume SMILES or database name – use first 20 chars
-                name = source_str[:20].replace("/", "_")
+                # Assume SMILES or database name – use a prefix + hash
+                # to avoid collisions between similar strings.
+                digest = hashlib.sha256(source_str.encode()).hexdigest()[:8]
+                name = f"{source_str[:12].replace('/', '_')}_{digest}"
 
         return BuildingBlock(
             name=name,

@@ -2,11 +2,12 @@
 
 A Python toolkit for building, modifying, and analyzing atomistic crystal structure models, especially metal-organic frameworks (MOFs).
 
-mofforge provides three core capabilities:
+mofforge provides four core capabilities:
 
 1. **Build** MOFs from scratch using topology templates and building blocks, powered by [TOBACCO 3.0](https://github.com/tobacco-mof/tobacco_3.0) and [Pormake](https://github.com/Sangwon91/PORMAKE)
 2. **Modify** existing structures via substructure search and fragment replacement, adapted partially from [PoreMatMod.jl](https://github.com/SimonEnsemble/PoreMatMod.jl)
 3. **Analyze** structures with adsorbate placement, validation, and visualization
+4. **Query** simulation-ready MOF structures from the [CoRE MOF](https://github.com/mtap-research/CoRE-MOF-Tools) and [CSD](https://www.ccdc.cam.ac.uk/) databases
 
 Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), and [SciPy](https://scipy.org/).
 
@@ -56,6 +57,15 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 - Auto-detection of query type (REFcode vs. DOI vs. name)
 - SQLite-backed caching for instant lookups after initial import
 - Requires a CSD license -- users export the MOF subset as a Tab Separated List from [ConQuest](https://www.ccdc.cam.ac.uk/solutions/software/conquest/)
+
+### CoRE MOF Database
+
+- Query ~10,000 simulation-ready MOF structures from the [CoRE MOF database](https://github.com/mtap-research/CoRE-MOF-Tools)
+- Search by CoreMOF ID, CSD refcode, metal type, topology, name, or DOI
+- Property-based screening -- filter by pore dimensions (LCD, PLD), stability (thermal, water, solvent), surface area, open metal sites, and gas storage classification
+- CSD-to-CoreMOF bridge -- map CSD refcodes to simulation-ready CoreMOF identifiers
+- Combined `mofforge lookup` command -- search a MOF name in CSD and return CoreMOF entries in one step
+- Data available from [Zenodo](https://zenodo.org/records/14510695) (not bundled)
 
 ### Pipeline & Automation
 
@@ -192,6 +202,31 @@ mofforge csd "HKUST-1" -n 5
 mofforge csd "10.1038/46248" -v
 ```
 
+### Query the CoRE MOF database
+
+```python
+from mofforge.coremof import get_database, csd_to_coremof
+
+# Point to the CoRE MOF CSV (download from https://zenodo.org/records/14510695)
+db = get_database(data_path="/path/to/CR_data_CSD_modified_20250227.csv")
+
+# CSD refcode -> CoreMOF simulation IDs
+records = csd_to_coremof("ABAVIJ")
+for rec in records:
+    print(f"{rec.coreid} ({rec.extension})")
+
+# Screen by properties
+candidates = db.screen(metal="Cu", lcd_min=8.0, water_stability_min=0.7, has_oms=True)
+for rec in candidates:
+    print(f"{rec.coreid}: LCD={rec.lcd:.1f}A, H2O_stab={rec.water_stability:.2f}")
+```
+
+Or search a MOF name across both CSD and CoreMOF in one step:
+
+```bash
+mofforge lookup "HKUST" -v
+```
+
 ### Place adsorbates
 
 ```python
@@ -212,6 +247,7 @@ print(f"Placed {result.n_adsorbates} adsorbates, {result.clashes} clashes")
 - **[Python API Manual](docs/python_api.md)** -- complete guide to the search-and-replace system
 - **[MOF Construction Guide](docs/build.md)** -- building MOFs with TOBACCO and Pormake
 - **[CSD Lookup Guide](docs/csd.md)** -- searching the CSD MOF subset database
+- **[CoRE MOF Guide](docs/coremof.md)** -- querying simulation-ready MOF structures
 - **[CLI Reference](docs/cli.md)** -- command-line interface reference
 
 ## Examples
@@ -305,6 +341,7 @@ mofforge/
 │   ├── search/        # VF2 isomorphism, MatchResult API
 │   ├── replace/       # Alignment, reassembly, replacement pipeline
 │   ├── build/         # MOF construction (MOFBuilder, TOBACCO, Pormake, SMILES-to-BB)
+│   ├── coremof/       # CoRE MOF database (simulation-ready MOF lookup + screening)
 │   ├── csd/           # CSD database lookup (REFcode, DOI, name search)
 │   ├── adsorbate/     # Adsorption site detection and adsorbate placement
 │   ├── io/            # CIF and XYZ I/O

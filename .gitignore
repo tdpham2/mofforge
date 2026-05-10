@@ -44,3 +44,13 @@ mofforge.toml
 
 # CSD proprietary data (not distributable)
 external_data/
+
+# CoRE MOF data (download from Zenodo)
+coremof_data/
+
+# Build output directories
+pormake_output/
+scripts/output/
+
+# SQLite caches
+*.db

@@ -281,10 +281,13 @@ class CSDDatabase:
             raw=raw,
         )
 
-    def _query(self, sql: str, params: tuple = (), limit: int = 50) -> list[CSDRecord]:
+    def _query(self, sql: str, params: tuple = (), limit: int | None = None) -> list[CSDRecord]:
         """Execute a query and return CSDRecord list."""
         conn = self._ensure_db()
-        cursor = conn.execute(sql + " LIMIT ?", (*params, limit))
+        if limit is not None:
+            cursor = conn.execute(sql + " LIMIT ?", (*params, limit))
+        else:
+            cursor = conn.execute(sql, params)
         return [self._row_to_record(r) for r in cursor.fetchall()]
 
     # ------------------------------------------------------------------
@@ -301,7 +304,7 @@ class CSDDatabase:
         row = cursor.fetchone()
         return self._row_to_record(row) if row else None
 
-    def search_name(self, name: str, limit: int = 50) -> list[CSDRecord]:
+    def search_name(self, name: str, limit: int | None = None) -> list[CSDRecord]:
         """Substring search across systematic and common chemical names."""
         pattern = f"%{name}%"
         return self._query(
@@ -311,7 +314,7 @@ class CSDDatabase:
             limit=limit,
         )
 
-    def search_doi(self, doi: str, limit: int = 50) -> list[CSDRecord]:
+    def search_doi(self, doi: str, limit: int | None = None) -> list[CSDRecord]:
         """Exact or partial DOI match."""
         pattern = f"%{doi}%"
         return self._query(
@@ -320,7 +323,7 @@ class CSDDatabase:
             limit=limit,
         )
 
-    def search_formula(self, formula: str, limit: int = 50) -> list[CSDRecord]:
+    def search_formula(self, formula: str, limit: int | None = None) -> list[CSDRecord]:
         """Substring match on chemical formula."""
         pattern = f"%{formula}%"
         return self._query(
@@ -329,7 +332,7 @@ class CSDDatabase:
             limit=limit,
         )
 
-    def search_ccdc(self, ccdc_number: str, limit: int = 50) -> list[CSDRecord]:
+    def search_ccdc(self, ccdc_number: str, limit: int | None = None) -> list[CSDRecord]:
         """Lookup by CCDC deposition number."""
         return self._query(
             "SELECT * FROM records WHERE ccdc_number = ?",
@@ -337,7 +340,7 @@ class CSDDatabase:
             limit=limit,
         )
 
-    def search(self, query: str, field: str = "auto", limit: int = 50) -> CSDSearchResult:
+    def search(self, query: str, field: str = "auto", limit: int | None = None) -> CSDSearchResult:
         """Unified search with auto-detection of query type.
 
         Parameters

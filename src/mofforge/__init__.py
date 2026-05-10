@@ -16,6 +16,15 @@ from mofforge.adsorbate import (
     place_adsorbate,
 )
 from mofforge.batch import run_batch
+from mofforge.coremof import (
+    BridgeResult,
+    CoreMOFDatabase,
+    CoreMOFRecord,
+    CoreMOFSearchResult,
+    csd_to_coremof,
+    search_csd_name,
+)
+from mofforge.coremof import get_database as get_coremof_database
 from mofforge.csd import CSDDatabase, CSDRecord, CSDSearchResult, get_database
 from mofforge.build import (
     BuildConfig,
@@ -66,11 +75,15 @@ __all__ = [
     "AdsorptionSite",
     "Alignment",
     "BondingRule",
+    "BridgeResult",
     "BuildConfig",
     "BuildResult",
     "BuilderBackend",
     "BuildingBlock",
     "ConfigError",
+    "CoreMOFDatabase",
+    "CoreMOFRecord",
+    "CoreMOFSearchResult",
     "CSDDatabase",
     "CSDRecord",
     "CSDSearchResult",
@@ -92,11 +105,13 @@ __all__ = [
     "build_html",
     "clean_species",
     "config",
+    "csd_to_coremof",
     "find_adsorption_sites",
     "find_pattern",
     "find_subgraph_isomorphisms",
     "fragment",
     "generate_atom_labels",
+    "get_coremof_database",
     "get_database",
     "get_element_color",
     "get_molecule",
@@ -116,6 +131,7 @@ __all__ = [
     "render_to_png",
     "replace_pattern",
     "run_batch",
+    "search_csd_name",
     "set_paths",
     "smarts_search",
     "SolventRemovalResult",

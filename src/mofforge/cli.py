@@ -440,7 +440,7 @@ def build_list_cmd(backend, list_type, tobacco_path, verbose):
     default="auto",
     help="Field to search (default: auto-detect).",
 )
-@click.option("--limit", "-n", default=10, type=int, help="Max results to display.")
+@click.option("--limit", "-n", default=50, type=int, help="Max results to display (default: 50).")
 @click.option("--data-path", default=None, help="Path to CSD TSV file (overrides config).")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
 def csd_cmd(query, field, limit, data_path, verbose):
@@ -459,9 +459,14 @@ def csd_cmd(query, field, limit, data_path, verbose):
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
+    # Get total count, then limited results
+    all_result = db.search(query, field=field)
+    total = all_result.n_matches
     result = db.search(query, field=field, limit=limit)
 
-    click.echo(f"CSD lookup: {result.n_matches} match(es) for '{query}' (field: {result.field})")
+    click.echo(f"CSD lookup: {total} match(es) for '{query}' (field: {result.field})")
+    if total > limit:
+        click.echo(f"  (showing first {limit} of {total}; use -n {total} to see all)")
     for rec in result.records:
         click.echo(f"  {rec.refcode}: {rec.chemical_name_common or rec.chemical_name_systematic}")
         if rec.doi:
@@ -472,6 +477,133 @@ def csd_cmd(query, field, limit, data_path, verbose):
             click.echo(f"    Formula: {rec.chemical_formula_moiety}")
             click.echo(f"    Journal: {rec.journal} ({rec.year})")
             click.echo(f"    Space group: {rec.space_group}")
+
+
+@main.command("coremof")
+@click.argument("query")
+@click.option(
+    "--field",
+    "-f",
+    type=click.Choice(["auto", "coreid", "refcode", "name", "doi", "metal", "topology"]),
+    default="auto",
+    help="Field to search (default: auto-detect).",
+)
+@click.option("--limit", "-n", default=50, type=int, help="Max results to display (default: 50).")
+@click.option("--data-path", default=None, help="Path to CoRE MOF CSV file (overrides config).")
+@click.option("--bridge", is_flag=True, help="Treat QUERY as CSD refcode, return CoreMOF entries.")
+@click.option("-v", "--verbose", is_flag=True, help="Show extended properties.")
+def coremof_cmd(query, field, limit, data_path, bridge, verbose):
+    """Search the CoRE MOF database for simulation-ready structures."""
+    _setup_logging(verbose)
+
+    from mofforge.coremof import get_database, csd_to_coremof
+    from mofforge.utils.config import set_paths
+
+    if data_path:
+        set_paths(coremof_data=data_path)
+
+    try:
+        db = get_database()
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    if bridge:
+        records = csd_to_coremof(query, db=db)
+        click.echo(f"CoreMOF bridge: {len(records)} match(es) for CSD refcode '{query}'")
+        for rec in records:
+            click.echo(f"  {rec.coreid}")
+            click.echo(f"    Refcode:   {rec.refcode}")
+            click.echo(f"    Extension: {rec.extension}")
+            click.echo(f"    Metals:    {rec.metal_types}")
+            if verbose:
+                click.echo(rec.properties_summary())
+        return
+
+    # Get total count, then limited results
+    all_result = db.search(query, field=field)
+    total = all_result.n_matches
+    result = db.search(query, field=field, limit=limit)
+
+    click.echo(
+        f"CoreMOF lookup: {total} match(es) "
+        f"for '{query}' (field: {result.field})"
+    )
+    if total > limit:
+        click.echo(f"  (showing first {limit} of {total}; use -n {total} to see all)")
+    for rec in result.records:
+        click.echo(f"  {rec.summary()}")
+        if verbose:
+            click.echo(rec.properties_summary())
+            click.echo()
+
+
+@main.command("lookup")
+@click.argument("name")
+@click.option("--limit", "-n", default=50, type=int, help="Max CSD results to display (default: 50).")
+@click.option("--csd-data-path", default=None, help="Path to CSD TSV file.")
+@click.option("--coremof-data-path", default=None, help="Path to CoRE MOF CSV file.")
+@click.option("-v", "--verbose", is_flag=True, help="Show extended CoreMOF properties.")
+def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
+    """Search CSD by MOF name and return CoreMOF simulation IDs.
+
+    Chains a CSD name search with CoreMOF refcode lookup: for each CSD
+    record found, displays all corresponding CoreMOF entries with their
+    coreid identifiers for simulation.
+    """
+    _setup_logging(verbose)
+
+    from mofforge.coremof import search_csd_name
+    from mofforge.coremof import get_database as get_coremof_db
+    from mofforge.csd import get_database as get_csd_db
+    from mofforge.utils.config import set_paths
+
+    if csd_data_path:
+        set_paths(csd_data=csd_data_path)
+    if coremof_data_path:
+        set_paths(coremof_data=coremof_data_path)
+
+    try:
+        csd_db = get_csd_db(data_path=csd_data_path) if csd_data_path else get_csd_db()
+        coremof_db = get_coremof_db(data_path=coremof_data_path) if coremof_data_path else get_coremof_db()
+        # Run without limit to get total count
+        all_results = search_csd_name(name, coremof_db=coremof_db, csd_db=csd_db)
+    except FileNotFoundError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    total_csd = len(all_results)
+    results = all_results[:limit]
+    total_coremof = sum(len(br.coremof_records) for br in results)
+    click.echo(
+        f"Lookup '{name}': {total_csd} total CSD match(es), "
+        f"showing {len(results)}, "
+        f"{total_coremof} CoreMOF entry(ies)"
+    )
+    if total_csd > limit:
+        click.echo(
+            f"  (showing first {limit} of {total_csd} CSD matches; "
+            f"use -n {total_csd} to see all)"
+        )
+    click.echo()
+
+    with_match = [br for br in results if br.has_coremof]
+    no_match = [br for br in results if not br.has_coremof]
+
+    if no_match:
+        click.echo(f"--- Without CoreMOF matches ({len(no_match)}) ---")
+        for br in no_match:
+            click.echo(br.summary())
+        click.echo()
+
+    if with_match:
+        click.echo(f"--- With CoreMOF matches ({len(with_match)}) ---")
+        for br in with_match:
+            click.echo(br.summary())
+            if verbose:
+                for rec in br.coremof_records:
+                    click.echo(rec.properties_summary())
+            click.echo()
 
 
 if __name__ == "__main__":

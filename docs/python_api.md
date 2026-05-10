@@ -25,6 +25,10 @@ Complete guide to using mofforge as a Python library.
 - [Structure Validation](#structure-validation)
 - [Batch Processing](#batch-processing)
 - [Provenance Tracking](#provenance-tracking)
+- [Database Lookups](#database-lookups)
+  - [CSD Database](#csd-database)
+  - [CoRE MOF Database](#core-mof-database)
+  - [CSD-to-CoreMOF Bridge](#csd-to-coremof-bridge)
 - [API Reference](#api-reference)
 
 ---
@@ -495,6 +499,68 @@ The Pipeline API attaches provenance automatically.
 
 ---
 
+## Database Lookups
+
+mofforge includes two database modules for searching MOF structures by metadata and properties.
+
+### CSD Database
+
+Search the Cambridge Structural Database MOF subset by REFcode, DOI, name, or formula. See the [CSD Lookup Guide](csd.md) for full details.
+
+```python
+from mofforge.csd import get_database
+
+db = get_database(data_path="/path/to/MOF_subset.tab")
+result = db.search("HKUST-1")
+for rec in result.records:
+    print(f"{rec.refcode}: {rec.chemical_name_common}")
+```
+
+### CoRE MOF Database
+
+Query ~10,000 simulation-ready MOF structures from the CoRE MOF database. See the [CoRE MOF Guide](coremof.md) for full details.
+
+```python
+from mofforge.coremof import get_database
+
+db = get_database(data_path="/path/to/CR_data_CSD_modified_20250227.csv")
+
+# Search by metal type
+for rec in db.search_metal("Cu", limit=5):
+    print(f"{rec.coreid}: {rec.topology_single}")
+
+# Screen by properties
+candidates = db.screen(
+    metal="Cu",
+    lcd_min=8.0,
+    water_stability_min=0.7,
+    has_oms=True,
+)
+for rec in candidates:
+    print(f"{rec.coreid}: LCD={rec.lcd:.1f}A")
+```
+
+### CSD-to-CoreMOF Bridge
+
+Map CSD refcodes to simulation-ready CoreMOF identifiers, or search a MOF name across both databases:
+
+```python
+from mofforge.coremof import csd_to_coremof, search_csd_name
+
+# Single refcode bridge
+records = csd_to_coremof("ABAVIJ")
+for rec in records:
+    print(f"{rec.coreid} ({rec.extension})")
+
+# Name search across CSD + CoreMOF
+for br in search_csd_name("HKUST"):
+    print(f"CSD: {br.csd_record.refcode}")
+    for rec in br.coremof_records:
+        print(f"  -> {rec.coreid}")
+```
+
+---
+
 ## API Reference
 
 ### Core Classes
@@ -508,6 +574,12 @@ The Pipeline API attaches provenance automatically.
 | `Provenance` | `mofforge.provenance` | Modification metadata |
 | `ValidationReport` | `mofforge.validation` | Validation results |
 | `Pipeline` | `mofforge.pipeline` | Multi-step operation chain |
+| `CoreMOFDatabase` | `mofforge.coremof` | CoRE MOF database with search/screen methods |
+| `CoreMOFRecord` | `mofforge.coremof` | Single CoRE MOF entry with properties |
+| `CoreMOFSearchResult` | `mofforge.coremof` | Search results container |
+| `BridgeResult` | `mofforge.coremof` | CSD record paired with CoreMOF matches |
+| `CSDDatabase` | `mofforge.csd` | CSD database with search methods |
+| `CSDRecord` | `mofforge.csd` | Single CSD entry |
 
 ### Core Functions
 
@@ -523,7 +595,11 @@ The Pipeline API attaches provenance automatically.
 | `smarts_search(pattern, parent)` | `mofforge.smarts` | SMARTS pattern search |
 | `parse_smarts(pattern)` | `mofforge.smarts` | Parse pattern to graph |
 | `run_batch(config_path)` | `mofforge.batch` | Run batch processing |
-| `set_paths(crystals, moieties)` | `mofforge.utils.config` | Set data directories |
+| `set_paths(crystals, moieties, csd_data, coremof_data)` | `mofforge.utils.config` | Set data directories |
+| `get_database(data_path)` | `mofforge.csd` | Get CSD database singleton |
+| `get_coremof_database(data_path)` | `mofforge.coremof` | Get CoRE MOF database singleton |
+| `csd_to_coremof(refcode)` | `mofforge.coremof` | Map CSD refcode to CoreMOF entries |
+| `search_csd_name(name)` | `mofforge.coremof` | Search CSD name, return CoreMOF bridges |
 | `reassemble()` | `mofforge.core.moiety` | Reassemble fragments |
 | `anchor_indices(species)` | `mofforge.core.moiety` | Get indices of anchor atoms |
 | `untag_anchor(species)` | `mofforge.core.moiety` | Strip `!` tags from species |

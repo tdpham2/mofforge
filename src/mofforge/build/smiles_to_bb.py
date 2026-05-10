@@ -659,6 +659,7 @@ def smiles_to_pormake_edge_xyz(
     smiles: str,
     output_path: str | Path,
     uff_max_iters: int = 2000,
+    mode: Literal["auto", "carboxylate", "direct", "carboxylic"] = "auto",
 ) -> Path:
     """Convert a SMILES string to a Pormake-format edge building-block XYZ.
 
@@ -676,7 +677,18 @@ def smiles_to_pormake_edge_xyz(
     if mol is None:
         raise ValueError(f"RDKit could not parse SMILES: {smiles!r}")
 
-    conn_info = detect_connection_points(smiles)
+    if mode == "carboxylic":
+        conn_info = detect_carboxylic_groups(smiles)
+    elif mode in ("carboxylate", "direct"):
+        conn_info = detect_connection_points(smiles)
+        if conn_info.mode != mode:
+            raise ValueError(
+                f"Requested mode {mode!r} but detection found "
+                f"{conn_info.mode!r} for SMILES: {smiles!r}"
+            )
+    else:
+        # "auto" — the original behaviour
+        conn_info = detect_connection_points(smiles)
 
     mol_h = Chem.AddHs(mol)
 
@@ -698,7 +710,11 @@ def smiles_to_pormake_edge_xyz(
     conf = mol_h.GetConformer()
 
     # ---- 2. Build atom/bond lists depending on mode ---------------------- #
-    if conn_info.mode == "carboxylate":
+    if conn_info.mode == "carboxylic":
+        xyz_atoms, xyz_bonds, x_indices = _build_pormake_carboxylic_edge(
+            mol_h, conf, conn_info,
+        )
+    elif conn_info.mode == "carboxylate":
         xyz_atoms, xyz_bonds, x_indices = _build_pormake_carboxylate_edge(
             mol_h, conf, conn_info,
         )
@@ -845,6 +861,89 @@ def _build_pormake_carboxylate_edge(
             for nbr in oxy_atom.GetNeighbors():
                 if nbr.GetAtomicNum() == 1:
                     atoms_to_remove.add(nbr.GetIdx())
+
+    # Surviving atom indices.
+    surviving = [i for i in range(mol_h.GetNumAtoms()) if i not in atoms_to_remove]
+    old_to_new: dict[int, int] = {old: new for new, old in enumerate(surviving)}
+
+    # Build Cartesian positions, centered on origin.
+    positions = np.array([list(conf.GetAtomPosition(i)) for i in surviving])
+    centroid = positions.mean(axis=0)
+    positions -= centroid
+
+    # All positions (including removed atoms) for direction computation.
+    all_positions = np.array([list(conf.GetAtomPosition(i)) for i in range(mol_h.GetNumAtoms())])
+    all_positions -= centroid
+
+    # Build atom list.
+    atoms: list[_XyzAtom] = []
+    for pos_i, old_idx in enumerate(surviving):
+        sym = mol_h.GetAtomWithIdx(old_idx).GetSymbol()
+        p = positions[pos_i]
+        atoms.append(_XyzAtom(symbol=sym, x=p[0], y=p[1], z=p[2]))
+
+    # Build bond list (surviving atoms only).
+    bonds: list[_XyzBond] = []
+    surviving_set = set(surviving)
+    for bond in mol_h.GetBonds():
+        a = bond.GetBeginAtomIdx()
+        b = bond.GetEndAtomIdx()
+        if a in surviving_set and b in surviving_set:
+            bt = _bond_type_char(bond)
+            bonds.append(_XyzBond(old_to_new[a], old_to_new[b], bt))
+
+    # Place X dummy atoms at each stripped carboxylate position.
+    x_indices: list[int] = []
+    for g in conn_info.carboxylate_groups:
+        anchor_idx = g.anchor_idx
+        anchor_new = old_to_new[anchor_idx]
+        anchor_pos = positions[surviving.index(anchor_idx)]
+
+        # Direction: anchor -> carboxylate carbon (from original coords).
+        carboxylate_c_pos = all_positions[g.carbon_idx]
+        anchor_orig_pos = all_positions[anchor_idx]
+        direction = _outward_direction(carboxylate_c_pos, anchor_orig_pos)
+
+        x_pos = anchor_pos + direction * _PORMAKE_X_DISTANCE
+        x_new_idx = len(atoms)
+        atoms.append(_XyzAtom(symbol="X", x=x_pos[0], y=x_pos[1], z=x_pos[2]))
+        bonds.append(_XyzBond(x_new_idx, anchor_new, "S"))
+        x_indices.append(x_new_idx)
+
+    return atoms, bonds, x_indices
+
+
+def _build_pormake_carboxylic_edge(
+    mol_h,
+    conf,
+    conn_info: ConnectionInfo,
+) -> tuple[list[_XyzAtom], list[_XyzBond], list[int]]:
+    """Build Pormake atom/bond lists for a *carboxylic*-stripped edge.
+
+    Strips the entire COOH group and places X dummy atoms at the anchor
+    atoms, matching the TOBACCO carboxylic mode logic.
+    """
+    # Collect all atoms to remove: carboxylate C, both O atoms, and
+    # H atoms bonded to those oxygens or to anchor atoms.
+    atoms_to_remove: set[int] = set()
+    anchor_set: set[int] = set()
+    for g in conn_info.carboxylate_groups:
+        atoms_to_remove.add(g.carbon_idx)
+        atoms_to_remove.add(g.oxy_double_idx)
+        atoms_to_remove.add(g.oxy_single_idx)
+        anchor_set.add(g.anchor_idx)
+        for oxy_idx in (g.oxy_double_idx, g.oxy_single_idx):
+            oxy_atom = mol_h.GetAtomWithIdx(oxy_idx)
+            for nbr in oxy_atom.GetNeighbors():
+                if nbr.GetAtomicNum() == 1:
+                    atoms_to_remove.add(nbr.GetIdx())
+
+    # Remove H atoms bonded to anchor atoms.
+    for anchor_idx in anchor_set:
+        anchor_atom = mol_h.GetAtomWithIdx(anchor_idx)
+        for nbr in anchor_atom.GetNeighbors():
+            if nbr.GetAtomicNum() == 1:
+                atoms_to_remove.add(nbr.GetIdx())
 
     # Surviving atom indices.
     surviving = [i for i in range(mol_h.GetNumAtoms()) if i not in atoms_to_remove]

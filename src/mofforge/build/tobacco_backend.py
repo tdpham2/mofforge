@@ -461,8 +461,12 @@ class TobaccoBackend:
                     "error": f"Database directory not found: {db_dir}",
                 }
 
-        # Collect available CIFs in the database (recursively)
-        available: list[str] = sorted({f.name for f in db_dir.rglob("*.cif")})
+        # Collect available CIFs in the database (recursively).
+        # Build a name -> path index so we can copy without re-walking.
+        available_map: dict[str, Path] = {}
+        for f in db_dir.rglob("*.cif"):
+            available_map.setdefault(f.name, f)
+        available: list[str] = sorted(available_map)
 
         if names is None:
             result: dict[str, Any] = {
@@ -491,16 +495,15 @@ class TobaccoBackend:
                 result["source"] = str(source)
             return result
 
-        # Actually copy
+        # Actually copy (use the index built above to avoid re-walking)
         copied: list[str] = []
         errors: list[dict[str, str]] = []
         for fname in to_copy:
-            # Find the file in the database tree
-            matches = list(db_dir.rglob(fname))
-            if matches:
+            src = available_map.get(fname)
+            if src is not None:
                 dst = target_dir / fname
                 try:
-                    shutil.copy2(matches[0], dst)
+                    shutil.copy2(src, dst)
                     copied.append(fname)
                 except Exception as exc:
                     errors.append({"file": fname, "error": str(exc)})
@@ -555,7 +558,7 @@ class TobaccoBackend:
 
         lines = config_file.read_text().splitlines(keepends=True)
         found = False
-        key_pattern = re.compile(rf"^{re.escape(key)}\s*=")
+        key_pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
         new_lines: list[str] = []
         for line in lines:
             stripped = line.strip()

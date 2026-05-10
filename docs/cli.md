@@ -18,6 +18,8 @@ mofforge --version
 - [build-status](#build-status) — Show backend status
 - [build-list](#build-list) — List topologies, nodes, or edges
 - [csd](#csd) — Look up MOFs in the CSD database
+- [coremof](#coremof) — Search the CoRE MOF database
+- [lookup](#lookup) — Search CSD by name, return CoreMOF simulation IDs
 - [render](#render) — Render a structure to PNG
 
 ---
@@ -519,6 +521,141 @@ CSD lookup: 1 match(es) for 'ABACUF' (field: refcode)
 
 ---
 
+## coremof
+
+Search the [CoRE MOF database](https://github.com/mtap-research/CoRE-MOF-Tools) for simulation-ready MOF structures. The database contains ~10,000 entries with pre-computed properties (pore dimensions, stability, topology, etc.).
+
+Data must be downloaded from [Zenodo](https://zenodo.org/records/14510695) and configured before first use.
+
+```
+mofforge coremof QUERY [OPTIONS]
+```
+
+**Required:**
+
+| Argument | Description |
+|----------|-------------|
+| `QUERY` | Search term (CoreMOF ID, CSD refcode, metal, topology, name, or DOI) |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-f, --field [auto\|coreid\|refcode\|name\|doi\|metal\|topology]` | `auto` | Field to search |
+| `-n, --limit INT` | `10` | Maximum number of results |
+| `--data-path TEXT` | from config | Path to CoRE MOF CSV file |
+| `--bridge` | off | Treat QUERY as CSD refcode and return CoreMOF entries |
+| `-v, --verbose` | off | Show extended properties (pore dims, stability, etc.) |
+
+**Auto-detection rules** (when `--field auto`):
+
+| Query pattern | Detected as |
+|---------------|-------------|
+| Starts with digits + `[` (e.g. `2004[Co]...`) | CoreMOF ID |
+| Starts with `10.` | DOI |
+| Known topology name (e.g. `pcu`, `dia`) | Topology |
+| 1-2 letter element symbol (e.g. `Cu`, `Zn`) | Metal |
+| 3-8 uppercase letters + optional digits | CSD refcode |
+| Anything else | Name |
+
+**Configuration:**
+
+The data file path can be set via (in order of priority):
+
+1. `--data-path` CLI option
+2. `set_paths(coremof_data=...)` in Python
+3. `MOFFORGE_COREMOF_DATA_PATH` environment variable
+4. `[coremof] data_path` in `mofforge.toml`
+
+**Examples:**
+
+```bash
+# Search by metal type
+mofforge coremof Cu --field metal
+
+# Search by topology
+mofforge coremof pcu --field topology -n 20
+
+# CSD refcode -> CoreMOF entries (bridge mode)
+mofforge coremof ABAVIJ --bridge
+
+# Search by name with verbose output
+mofforge coremof "HKUST" --field name -v
+
+# Direct CoreMOF ID lookup
+mofforge coremof "2004[Co][rtl]3[ASR]1" --field coreid
+```
+
+**Output (bridge mode):**
+
+```
+CoreMOF bridge: 2 match(es) for CSD refcode 'ABAVIJ'
+  2004[Co][rtl]3[ASR]1
+    Refcode:   ABAVIJ_ASR_pacman
+    Extension: All Solvent Removed
+    Metals:    Co
+  2004[Co][rtl]3[FSR]1
+    Refcode:   ABAVIJ_FSR_pacman
+    Extension: Free Solvent Removed
+    Metals:    Co
+```
+
+---
+
+## lookup
+
+Search CSD by MOF name and return CoreMOF simulation IDs in a single step. This chains a CSD name search with CoreMOF refcode bridge lookups -- for each CSD match found, all corresponding CoreMOF entries are displayed.
+
+Requires both CSD and CoRE MOF data files to be configured.
+
+```
+mofforge lookup NAME [OPTIONS]
+```
+
+**Required:**
+
+| Argument | Description |
+|----------|-------------|
+| `NAME` | MOF name to search in CSD (substring match) |
+
+**Optional:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-n, --limit INT` | `10` | Maximum number of CSD results |
+| `--csd-data-path TEXT` | from config | Path to CSD TSV file |
+| `--coremof-data-path TEXT` | from config | Path to CoRE MOF CSV file |
+| `-v, --verbose` | off | Show extended CoreMOF properties |
+
+**Examples:**
+
+```bash
+# Look up HKUST variants
+mofforge lookup "HKUST"
+
+# Look up with verbose CoreMOF properties
+mofforge lookup "imidazole" -v -n 20
+
+# Specify data paths explicitly
+mofforge lookup "UiO" \
+    --csd-data-path /path/to/MOF_subset.tab \
+    --coremof-data-path /path/to/CR_data.csv
+```
+
+**Output:**
+
+```
+Lookup 'HKUST': 2 CSD match(es), 4 CoreMOF entry(ies)
+
+CSD: HKUST1 | HKUST-1 | DOI:10.1126/science.283.5405.1148 | (1999)
+  -> 2020[Cu][pcu]3[ASR]1  (All Solvent Removed)  Cu  pcu
+  -> 2020[Cu][pcu]3[ION]1  (with ion)              Cu  pcu
+CSD: HKUST2 | HKUST-variant | (2005)
+  (no CoreMOF match)
+```
+
+---
+
 ## render
 
 Render a crystal structure (CIF or XYZ) to a PNG image using 3Dmol.js and Playwright.
@@ -613,6 +750,29 @@ mofforge csd "HKUST-1" --data-path /path/to/MOF_subset.tab
 
 # Find all structures from a specific paper
 mofforge csd "10.1126/science.283.5405.1148" --field doi -v
+```
+
+### Find simulation-ready MOF structures by name
+
+```bash
+# Search CSD by name and get CoreMOF IDs in one step
+mofforge lookup "HKUST" -v
+
+# Or do it in two steps for more control
+mofforge csd "HKUST-1" --data-path /path/to/MOF_subset.tab
+mofforge coremof HKUST1 --bridge
+```
+
+### Screen MOFs by properties
+
+```bash
+# Find Cu MOFs with large pores (use Python API for screening)
+python -c "
+from mofforge.coremof import get_database
+db = get_database()
+for r in db.screen(metal='Cu', lcd_min=8.0, water_stability_min=0.7, limit=10):
+    print(f'{r.coreid}: LCD={r.lcd:.1f}A, H2O={r.water_stability:.2f}')
+"
 ```
 
 ### Build, then functionalize
