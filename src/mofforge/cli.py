@@ -587,12 +587,23 @@ def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
         )
     click.echo()
 
-    for br in results:
-        click.echo(br.summary())
-        if verbose and br.coremof_records:
-            for rec in br.coremof_records:
-                click.echo(rec.properties_summary())
+    with_match = [br for br in results if br.has_coremof]
+    no_match = [br for br in results if not br.has_coremof]
+
+    if no_match:
+        click.echo(f"--- Without CoreMOF matches ({len(no_match)}) ---")
+        for br in no_match:
+            click.echo(br.summary())
         click.echo()
+
+    if with_match:
+        click.echo(f"--- With CoreMOF matches ({len(with_match)}) ---")
+        for br in with_match:
+            click.echo(br.summary())
+            if verbose:
+                for rec in br.coremof_records:
+                    click.echo(rec.properties_summary())
+            click.echo()
 
 
 if __name__ == "__main__":

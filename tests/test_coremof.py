@@ -809,7 +809,7 @@ class TestLookupCLI:
         assert result.exit_code == 0
         assert "HKUSTX" in result.output
         assert "2020[Cu][pcu]3[ASR]1" in result.output
-        assert "CoreMOF entry" in result.output
+        assert "With CoreMOF matches" in result.output
 
     def test_lookup_no_coremof(self, sample_csv, sample_csd_tsv):
         from click.testing import CliRunner
@@ -826,7 +826,7 @@ class TestLookupCLI:
             ],
         )
         assert result.exit_code == 0
-        assert "no CoreMOF match" in result.output
+        assert "Without CoreMOF matches" in result.output
 
     def test_lookup_no_csd_match(self, sample_csv, sample_csd_tsv):
         from click.testing import CliRunner
