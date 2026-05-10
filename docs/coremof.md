@@ -137,6 +137,32 @@ records = db.search_kh_class("superstrong_high_loading")
 records = db.search_oms(has_oms=True)
 ```
 
+### Combined CSD Name to CoreMOF Lookup
+
+Search for a MOF name in the CSD database and automatically look up CoreMOF entries for each match:
+
+```python
+from mofforge.coremof import search_csd_name
+
+results = search_csd_name("HKUST")
+for br in results:
+    csd = br.csd_record
+    print(f"CSD: {csd.refcode} ({csd.chemical_name_common})")
+    if br.has_coremof:
+        for rec in br.coremof_records:
+            print(f"  -> {rec.coreid} ({rec.extension})")
+    else:
+        print("  (no CoreMOF match)")
+```
+
+Each `BridgeResult` pairs a `CSDRecord` with its list of `CoreMOFRecord` matches:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `csd_record` | `CSDRecord` | The CSD database entry |
+| `coremof_records` | `list[CoreMOFRecord]` | CoreMOF entries for this refcode (may be empty) |
+| `has_coremof` | `bool` (property) | Whether any CoreMOF matches exist |
+
 ### Property-Based Screening
 
 Screen MOFs by combining property ranges and categorical filters:
@@ -241,4 +267,22 @@ CoreMOF bridge: 2 match(es) for CSD refcode 'ABAVIJ'
     Refcode:   ABAVIJ_FSR_pacman
     Extension: Free Solvent Removed
     Metals:    Co
+```
+
+### Combined Lookup (CSD Name to CoreMOF)
+
+Search a MOF name in CSD and return CoreMOF entries in one step:
+
+```bash
+mofforge lookup "HKUST" -v
+mofforge lookup "imidazole" -n 20
+```
+
+Output:
+```
+Lookup 'HKUST': 1 CSD match(es), 2 CoreMOF entry(ies)
+
+CSD: HKUST1 | HKUST-1 | DOI:10.1126/science.283.5405.1148 | (1999)
+  -> 2020[Cu][pcu]3[ASR]1  (All Solvent Removed)  Cu  pcu
+  -> 2020[Cu][pcu]3[ION]1  (with ion)              Cu  pcu
 ```
