@@ -48,7 +48,8 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 ### Visualization & AI Integration
 
 - Structure rendering to PNG via 3Dmol.js + Playwright (ball-stick, stick, sphere representations)
-- MCP (Model Context Protocol) server exposing 8 tools for AI agent integration
+- MCP (Model Context Protocol) server exposing 17 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
+- Optional [ChemGraph](https://github.com/argonne-lcf/ChemGraph) integration -- an HPC-aware `CGFastMCP` server for backend execution and ensemble fan-out (see [docs/chemgraph.md](docs/chemgraph.md))
 - Atom labels, unit cell edges, chemical formula overlay
 
 ### CSD Database Lookup
@@ -248,6 +249,7 @@ print(f"Placed {result.n_adsorbates} adsorbates, {result.clashes} clashes")
 - **[MOF Construction Guide](docs/build.md)** -- building MOFs with TOBACCO and Pormake
 - **[CSD Lookup Guide](docs/csd.md)** -- searching the CSD MOF subset database
 - **[CoRE MOF Guide](docs/coremof.md)** -- querying simulation-ready MOF structures
+- **[ChemGraph Integration](docs/chemgraph.md)** -- exposing mofforge as MCP tools for the ChemGraph agent
 - **[CLI Reference](docs/cli.md)** -- command-line interface reference
 
 ## Examples

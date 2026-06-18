@@ -514,6 +514,19 @@ class TestGetDatabase:
         assert db.record_count() == 6
         db.close()
 
+    def test_explicit_path_does_not_clobber_singleton(self, sample_csv, monkeypatch):
+        """An explicit data_path must not overwrite the module singleton."""
+        from mofforge.coremof import database as db_module
+
+        sentinel = object()
+        monkeypatch.setattr(db_module, "_db", sentinel)
+
+        db = get_database(data_path=sample_csv)
+        assert db is not sentinel
+        # Singleton untouched by the explicit-path call.
+        assert db_module._db is sentinel
+        db.close()
+
     def test_missing_path_raises(self, monkeypatch):
         from mofforge.coremof import database as db_module
         from mofforge.utils.config import config

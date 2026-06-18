@@ -7,6 +7,10 @@ from mofforge.coremof.database import (
     search_csd_name,
 )
 from mofforge.coremof.models import BridgeResult, CoreMOFRecord, CoreMOFSearchResult
+from mofforge.coremof.structures import (
+    resolve_structure_path,
+    resolve_structures_dir,
+)
 
 __all__ = [
     "BridgeResult",
@@ -15,5 +19,7 @@ __all__ = [
     "CoreMOFSearchResult",
     "csd_to_coremof",
     "get_database",
+    "resolve_structure_path",
+    "resolve_structures_dir",
     "search_csd_name",
 ]

@@ -214,7 +214,9 @@ class CoreMOFDatabase:
             return self._conn
 
         need_build = not self._db_path.exists()
-        if not need_build:
+        if not need_build and self._data_path.exists():
+            # Rebuild if the source CSV is newer than the cache. Guard the
+            # stat() calls: the source file may disappear between checks.
             csv_mtime = self._data_path.stat().st_mtime
             db_mtime = self._db_path.stat().st_mtime
             if csv_mtime > db_mtime:
@@ -229,7 +231,8 @@ class CoreMOFDatabase:
         self._conn = sqlite3.connect(str(self._db_path))
         self._conn.row_factory = sqlite3.Row
 
-        # Guard against a stale empty DB from a previously failed build.
+        # Guard against a stale empty DB from a previously failed/interrupted
+        # build. Force a clean rebuild from the source data.
         try:
             count = self._conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
         except sqlite3.OperationalError:
@@ -237,6 +240,9 @@ class CoreMOFDatabase:
         if count == 0:
             self._conn.close()
             self._conn = None
+            # Drop the partial cache so the rebuild starts from a clean slate.
+            if self._db_path.exists():
+                self._db_path.unlink()
             self._build_db_from_csv()
             self._conn = sqlite3.connect(str(self._db_path))
             self._conn.row_factory = sqlite3.Row
@@ -679,14 +685,19 @@ _db: CoreMOFDatabase | None = None
 
 
 def get_database(data_path: str | Path | None = None) -> CoreMOFDatabase:
-    """Return the lazily-initialized CoRE MOF database singleton.
+    """Return a CoRE MOF database instance.
 
-    The data path is resolved in order of priority:
+    When *data_path* is omitted, a lazily-initialized module singleton is
+    returned, with the path resolved in order of priority:
 
-    1. Explicit *data_path* argument.
-    2. ``config.coremof_data_path`` (set via :func:`set_paths`).
-    3. ``MOFFORGE_COREMOF_DATA_PATH`` environment variable.
-    4. ``[coremof] data_path`` in ``mofforge.toml``.
+    1. ``config.coremof_data_path`` (set via :func:`set_paths`).
+    2. ``MOFFORGE_COREMOF_DATA_PATH`` environment variable.
+    3. ``[coremof] data_path`` in ``mofforge.toml``.
+
+    When *data_path* is provided explicitly, a **fresh, non-cached** instance
+    is returned for that path. This avoids clobbering the shared singleton from
+    long-lived processes (e.g. an MCP server) where different calls may target
+    different datasets.
 
     Raises
     ------
@@ -696,8 +707,9 @@ def get_database(data_path: str | Path | None = None) -> CoreMOFDatabase:
     global _db
 
     if data_path is not None:
-        _db = CoreMOFDatabase(Path(data_path))
-        return _db
+        # Explicit path: return a standalone instance, do not touch the
+        # module-level singleton.
+        return CoreMOFDatabase(Path(data_path))
 
     if _db is not None:
         return _db
