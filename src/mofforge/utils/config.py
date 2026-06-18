@@ -187,6 +187,7 @@ class MofforgeConfig:
     moiety_path: Path | None = field(default=None)
     csd_data_path: Path | None = field(default=None)
     coremof_data_path: Path | None = field(default=None)
+    coremof_structures_path: Path | None = field(default=None)
 
     @property
     def fragment_path(self) -> Path | None:
@@ -233,6 +234,7 @@ def set_paths(
     moieties: str | Path | None = None,
     csd_data: str | Path | None = None,
     coremof_data: str | Path | None = None,
+    coremof_structures: str | Path | None = None,
 ) -> None:
     """Update global data directory paths."""
     if crystals is not None:
@@ -243,6 +245,8 @@ def set_paths(
         config.csd_data_path = Path(csd_data)
     if coremof_data is not None:
         config.coremof_data_path = Path(coremof_data)
+    if coremof_structures is not None:
+        config.coremof_structures_path = Path(coremof_structures)
 
 
 # Regex to extract bare element symbol (e.g. "Zn2+" -> "Zn", "H!" -> "H")

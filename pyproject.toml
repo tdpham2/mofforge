@@ -44,6 +44,12 @@ build = [
 mcp = [
     "mcp[cli]>=1.0",
 ]
+chemgraph = [
+    # ChemGraph CGFastMCP HPC adapter (mofforge-mcp-chemgraph entry point).
+    # The CGFastMCP class lives on the dev-globus-hpc branch; install from
+    # source: pip install "chemgraph @ git+https://github.com/argonne-lcf/ChemGraph.git@dev-globus-hpc"
+    "chemgraph",
+]
 all = [
     "mofforge[vis,chem,build,mcp]",
 ]
@@ -56,6 +62,7 @@ dev = [
 [project.scripts]
 mofforge = "mofforge.cli:main"
 mofforge-mcp = "mofforge.mcp.server:main"
+mofforge-mcp-chemgraph = "mofforge.mcp.chemgraph_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mofforge"]

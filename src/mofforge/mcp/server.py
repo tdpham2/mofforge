@@ -18,13 +18,18 @@ mcp = FastMCP(
         "models, especially Metal-Organic Frameworks (MOFs).  Capabilities "
         "include substructure search (VF2 graph isomorphism), find-and-replace "
         "of molecular fragments, MOF construction from topology + building "
-        "blocks, structure validation, SMARTS-like pattern matching, and "
-        "structure rendering to PNG images for visual inspection.\n\n"
+        "blocks, structure validation, SMARTS-like pattern matching, "
+        "structure rendering to PNG images for visual inspection, CoRE MOF / "
+        "CSD database search and screening, structure-file retrieval, and "
+        "adsorbate placement.\n\n"
         "General guidance:\n"
         "- File paths should be absolute.\n"
         "- Crystal structures are read from CIF files.\n"
         "- Fragments are read from XYZ files with optional '!' anchor tags.\n"
         "- Distances are in Angstroms.\n"
+        "- Typical screening workflow: mofforge_screen_coremof to find "
+        "candidate MOFs by pore size / stability, mofforge_get_structure to "
+        "fetch a CIF, then mofforge_place_adsorbate before a simulation.\n"
         "- Call mofforge_validate after modifications to check for issues."
     ),
 )
@@ -608,6 +613,294 @@ def mofforge_list_building_blocks(
             indent=2,
         )
 
+
+
+@mcp.tool(
+    name="mofforge_search_coremof",
+    description=(
+        "Search the CoRE MOF database of simulation-ready MOF structures.  "
+        "Auto-detects query type (coreid, refcode, name, DOI, metal, "
+        "topology).  Returns matching entries with pore-size, density, "
+        "stability, and open-metal-site metadata."
+    ),
+)
+def mofforge_search_coremof(
+    query: str,
+    field: str = "auto",
+    limit: int = 25,
+    data_path: str | None = None,
+) -> str:
+    """Search the CoRE MOF database.
+
+    Parameters
+    ----------
+    query : str
+        Search term (coreid, refcode, name, DOI, metal symbol, or topology).
+    field : str
+        One of "auto", "coreid", "refcode", "name", "doi", "metal", "topology".
+    limit : int
+        Maximum number of results.
+    data_path : str or None
+        Optional path to the CoRE MOF metadata CSV (else resolved from config).
+    """
+    from mofforge.mcp._impl import search_coremof_impl
+
+    return json.dumps(
+        search_coremof_impl(query, field=field, limit=limit, data_path=data_path),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_screen_coremof",
+    description=(
+        "Screen the CoRE MOF database by property ranges and filters, e.g. "
+        "pore size (lcd/pld), density, accessible surface area, void "
+        "fraction, water/thermal stability, metal, topology, and open metal "
+        "sites.  Use this to shortlist MOFs before simulation."
+    ),
+)
+def mofforge_screen_coremof(
+    lcd_min: float | None = None,
+    lcd_max: float | None = None,
+    pld_min: float | None = None,
+    pld_max: float | None = None,
+    density_min: float | None = None,
+    density_max: float | None = None,
+    asa_min: float | None = None,
+    asa_max: float | None = None,
+    void_fraction_min: float | None = None,
+    void_fraction_max: float | None = None,
+    water_stability_min: float | None = None,
+    thermal_stability_min: float | None = None,
+    metal: str | None = None,
+    topology: str | None = None,
+    has_oms: bool | None = None,
+    extension: str | None = None,
+    limit: int = 50,
+    data_path: str | None = None,
+) -> str:
+    """Screen CoRE MOFs by property ranges and categorical filters.
+
+    Parameters
+    ----------
+    lcd_min, lcd_max : float or None
+        Largest cavity diameter range (Angstroms).
+    pld_min, pld_max : float or None
+        Pore limiting diameter range (Angstroms).
+    density_min, density_max : float or None
+        Crystal density range (g/cm^3).
+    asa_min, asa_max : float or None
+        Accessible surface area range (m^2/g).
+    void_fraction_min, void_fraction_max : float or None
+        Void fraction range (0-1).
+    water_stability_min, thermal_stability_min : float or None
+        Minimum stability scores.
+    metal : str or None
+        Restrict to MOFs containing this metal element.
+    topology : str or None
+        Restrict to a topology (single-node), e.g. "pcu".
+    has_oms : bool or None
+        Filter on presence of open metal sites.
+    extension : str or None
+        CoRE MOF processing variant (e.g. "ASR", "FSR", "ION").
+    limit : int
+        Maximum number of results.
+    data_path : str or None
+        Optional path to the CoRE MOF metadata CSV.
+    """
+    from mofforge.mcp._impl import screen_coremof_impl
+
+    return json.dumps(
+        screen_coremof_impl(
+            lcd_min=lcd_min,
+            lcd_max=lcd_max,
+            pld_min=pld_min,
+            pld_max=pld_max,
+            density_min=density_min,
+            density_max=density_max,
+            asa_min=asa_min,
+            asa_max=asa_max,
+            void_fraction_min=void_fraction_min,
+            void_fraction_max=void_fraction_max,
+            water_stability_min=water_stability_min,
+            thermal_stability_min=thermal_stability_min,
+            metal=metal,
+            topology=topology,
+            has_oms=has_oms,
+            extension=extension,
+            limit=limit,
+            data_path=data_path,
+        ),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_search_csd",
+    description=(
+        "Search the Cambridge Structural Database (CSD) lookup table.  "
+        "Auto-detects query type (refcode, name, DOI, formula, CCDC number)."
+    ),
+)
+def mofforge_search_csd(
+    query: str,
+    field: str = "auto",
+    limit: int = 25,
+    data_path: str | None = None,
+) -> str:
+    """Search the CSD database.
+
+    Parameters
+    ----------
+    query : str
+        Search term (refcode, name, DOI, formula, or CCDC number).
+    field : str
+        One of "auto", "refcode", "name", "doi", "formula", "ccdc".
+    limit : int
+        Maximum number of results.
+    data_path : str or None
+        Optional path to the CSD data file (else resolved from config).
+    """
+    from mofforge.mcp._impl import search_csd_impl
+
+    return json.dumps(
+        search_csd_impl(query, field=field, limit=limit, data_path=data_path),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_lookup_mof",
+    description=(
+        "Look up a MOF by name in the CSD and return the corresponding "
+        "simulation-ready CoRE MOF entries in one step (CSD->CoRE bridge)."
+    ),
+)
+def mofforge_lookup_mof(
+    name: str,
+    limit: int = 25,
+    csd_data_path: str | None = None,
+    coremof_data_path: str | None = None,
+) -> str:
+    """Bridge a MOF name from CSD to CoRE MOF entries.
+
+    Parameters
+    ----------
+    name : str
+        MOF name to search in the CSD (substring match).
+    limit : int
+        Maximum number of CSD records to consider.
+    csd_data_path : str or None
+        Optional path to the CSD data file.
+    coremof_data_path : str or None
+        Optional path to the CoRE MOF metadata CSV.
+    """
+    from mofforge.mcp._impl import lookup_mof_impl
+
+    return json.dumps(
+        lookup_mof_impl(
+            name,
+            limit=limit,
+            csd_data_path=csd_data_path,
+            coremof_data_path=coremof_data_path,
+        ),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_get_structure",
+    description=(
+        "Resolve a CoRE MOF coreid or refcode to a local CIF structure file "
+        "path, suitable for loading into ASE / gRASPA / adsorbate placement.  "
+        "Requires a configured CoRE MOF structures directory (CIFs are "
+        "distributed separately from the metadata)."
+    ),
+)
+def mofforge_get_structure(
+    identifier: str,
+    structures_dir: str | None = None,
+) -> str:
+    """Resolve a CoRE MOF identifier to a local CIF path.
+
+    Parameters
+    ----------
+    identifier : str
+        A CoRE MOF coreid (preferred) or refcode.
+    structures_dir : str or None
+        Directory containing CoRE MOF CIF files (else resolved from config /
+        MOFFORGE_COREMOF_STRUCTURES_PATH).
+    """
+    from mofforge.mcp._impl import get_structure_impl
+
+    return json.dumps(
+        get_structure_impl(identifier, structures_dir=structures_dir),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_place_adsorbate",
+    description=(
+        "Place one or more adsorbate molecules (e.g. CO2, H2, CH4, N2, H2O) "
+        "into a MOF crystal structure and write the result to a CIF file.  "
+        "Auto-detects void or open-metal adsorption sites."
+    ),
+)
+def mofforge_place_adsorbate(
+    cif_path: str,
+    adsorbate: str = "CO2",
+    n_adsorbates: int = 1,
+    strategy: str = "void",
+    output_cif: str = "with_adsorbate.cif",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> str:
+    """Place adsorbate(s) into a MOF.
+
+    Parameters
+    ----------
+    cif_path : str
+        Absolute path to the host MOF CIF file.
+    adsorbate : str
+        Built-in adsorbate name (see mofforge_list_adsorbates).
+    n_adsorbates : int
+        Number of adsorbate molecules to place.
+    strategy : str
+        Site-detection strategy: "void" or "oms" (open metal sites).
+    output_cif : str
+        Output CIF file path.
+    validate : bool
+        Check for steric clashes after placement.
+    random_seed : int or None
+        Seed for reproducible orientations/placement.
+    """
+    from mofforge.mcp._impl import place_adsorbate_impl
+
+    return json.dumps(
+        place_adsorbate_impl(
+            cif_path,
+            adsorbate=adsorbate,
+            n_adsorbates=n_adsorbates,
+            strategy=strategy,
+            output_cif=output_cif,
+            validate=validate,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_list_adsorbates",
+    description="List the built-in adsorbate molecules available for placement.",
+)
+def mofforge_list_adsorbates() -> str:
+    """List built-in adsorbate molecule names."""
+    from mofforge.mcp._impl import list_adsorbates_impl
+
+    return json.dumps(list_adsorbates_impl(), indent=2)
 
 
 def main():
