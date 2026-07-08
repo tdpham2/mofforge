@@ -308,18 +308,28 @@ def render_cmd(
 @click.option("--node", "-n", multiple=True, help="Node building-block file(s).")
 @click.option("--edge", "-e", multiple=True, help="Edge building-block file(s).")
 @click.option("-o", "--output", "output_dir", default=".", help="Output directory for CIF files.")
-@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
-@click.option("--parallel", is_flag=True, help="Run TOBACCO in parallel mode.")
+@click.option(
+    "--tobacco-data-dir",
+    default=None,
+    help="TOBACCO data directory (template_database/, nodes_database/, ...). "
+    "Auto-detected next to the installed tobacco3 package if omitted.",
+)
+@click.option(
+    "--tobacco-path",
+    default=None,
+    help="Deprecated alias for --tobacco-data-dir.",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
-def build_cmd(backend, topology, node, edge, output_dir, tobacco_path, parallel, verbose):
+def build_cmd(backend, topology, node, edge, output_dir, tobacco_data_dir, tobacco_path, verbose):
     """Build a MOF structure from topology + building blocks."""
     _setup_logging(verbose)
 
     from mofforge.build import MOFBuilder
 
     kwargs = {}
-    if tobacco_path:
-        kwargs["tobacco_path"] = tobacco_path
+    data_dir = tobacco_data_dir or tobacco_path
+    if data_dir:
+        kwargs["tobacco_data_dir"] = data_dir
 
     try:
         builder = MOFBuilder(backend=backend, **kwargs)
@@ -333,11 +343,8 @@ def build_cmd(backend, topology, node, edge, output_dir, tobacco_path, parallel,
         builder.add_edge(e)
 
     click.echo(f"Building MOF with {backend} backend (topology={topology})")
-    build_kwargs = {}
-    if parallel:
-        build_kwargs["parallel"] = True
 
-    result = builder.build(topology=topology, output_dir=output_dir, **build_kwargs)
+    result = builder.build(topology=topology, output_dir=output_dir, verbose=verbose)
 
     if result.success:
         click.echo(f"Build succeeded in {result.elapsed_seconds}s")
@@ -360,9 +367,10 @@ def build_cmd(backend, topology, node, edge, output_dir, tobacco_path, parallel,
     default="tobacco",
     help="Builder backend.",
 )
-@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
+@click.option("--tobacco-data-dir", default=None, help="TOBACCO data directory.")
+@click.option("--tobacco-path", default=None, help="Deprecated alias for --tobacco-data-dir.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
-def build_status_cmd(backend, tobacco_path, verbose):
+def build_status_cmd(backend, tobacco_data_dir, tobacco_path, verbose):
     """Show status of a builder backend."""
     _setup_logging(verbose)
 
@@ -371,8 +379,9 @@ def build_status_cmd(backend, tobacco_path, verbose):
     from mofforge.build import MOFBuilder
 
     kwargs = {}
-    if tobacco_path:
-        kwargs["tobacco_path"] = tobacco_path
+    data_dir = tobacco_data_dir or tobacco_path
+    if data_dir:
+        kwargs["tobacco_data_dir"] = data_dir
 
     try:
         builder = MOFBuilder(backend=backend, **kwargs)
@@ -399,17 +408,19 @@ def build_status_cmd(backend, tobacco_path, verbose):
     required=True,
     help="What to list.",
 )
-@click.option("--tobacco-path", default=None, help="Path to TOBACCO 3.0 directory.")
+@click.option("--tobacco-data-dir", default=None, help="TOBACCO data directory.")
+@click.option("--tobacco-path", default=None, help="Deprecated alias for --tobacco-data-dir.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
-def build_list_cmd(backend, list_type, tobacco_path, verbose):
+def build_list_cmd(backend, list_type, tobacco_data_dir, tobacco_path, verbose):
     """List available topologies or building blocks."""
     _setup_logging(verbose)
 
     from mofforge.build import MOFBuilder
 
     kwargs = {}
-    if tobacco_path:
-        kwargs["tobacco_path"] = tobacco_path
+    data_dir = tobacco_data_dir or tobacco_path
+    if data_dir:
+        kwargs["tobacco_data_dir"] = data_dir
 
     try:
         builder = MOFBuilder(backend=backend, **kwargs)

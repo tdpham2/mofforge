@@ -40,6 +40,16 @@ chem = [
 ]
 build = [
     "pormake",
+    # Importable ToBaCCo 3.0 (v3.1+ exposes tobacco3.generate_mof). The package
+    # ships code only and does NOT bundle the topology / building-block data
+    # directories (template_database/, nodes_database/, edges_database/).
+    # mofforge resolves that data in order: an explicit MOFFORGE_TOBACCO_DATA
+    # dir (or mofforge.toml path) -> auto-detection next to the installed
+    # package -> a one-time download of the pinned data tarball from GitHub,
+    # cached under ~/.cache/mofforge/tobacco-data (see mofforge.build.config).
+    # The data is GPLv3 (ToBaCCo, (c) 2019 Ryther Anderson); it is fetched and
+    # used at runtime only, so mofforge itself remains MIT.
+    "tobacco3 @ git+https://github.com/tdpham2/tobacco_3.0.git",
 ]
 mcp = [
     "mcp[cli]>=1.0",
@@ -64,8 +74,14 @@ mofforge = "mofforge.cli:main"
 mofforge-mcp = "mofforge.mcp.server:main"
 mofforge-mcp-chemgraph = "mofforge.mcp.chemgraph_server:main"
 
+# Required for the `tobacco3 @ git+https://...` direct URL dependency in the
+# `build` optional-dependency group; hatchling rejects direct references otherwise.
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mofforge"]
+artifacts = ["src/mofforge/data/moieties/*.xyz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

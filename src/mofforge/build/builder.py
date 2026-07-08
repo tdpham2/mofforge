@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mofforge.build.base import BuilderBackend, BuildingBlock, BuildResult, Topology
-from mofforge.build.config import BuildConfig, ConfigError
+from mofforge.build.config import BuildConfig
 
 logger = logging.getLogger("mofforge")
 
@@ -32,10 +32,10 @@ class MOFBuilder:
         if backend == "tobacco":
             from mofforge.build.tobacco_backend import TobaccoBackend
 
-            tobacco_path = kwargs.get("tobacco_path") or cfg.tobacco_path
-            if tobacco_path is None:
-                tobacco_path = cfg.resolve_tobacco_path()  # raises ConfigError if unconfigured
-            self._backend: BuilderBackend = TobaccoBackend(tobacco_path)  # type: ignore[assignment]
+            # Resolve the data directory (auto-detected next to the installed
+            # tobacco3 package when not explicitly configured).
+            data_dir = cfg.resolve_tobacco_data_dir()  # raises ConfigError if unusable
+            self._backend: BuilderBackend = TobaccoBackend(data_dir)  # type: ignore[assignment]
 
         elif backend == "pormake":
             from mofforge.build.pormake_backend import PormakeBackend

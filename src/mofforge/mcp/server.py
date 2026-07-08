@@ -30,6 +30,12 @@ mcp = FastMCP(
         "- Typical screening workflow: mofforge_screen_coremof to find "
         "candidate MOFs by pore size / stability, mofforge_get_structure to "
         "fetch a CIF, then mofforge_place_adsorbate before a simulation.\n"
+        "- Typical functionalization workflow: obtain the linker SMILES (e.g. "
+        "via MOFid), mofforge_find_sites to see functionalizable positions, "
+        "mofforge_list_functional_groups for the group menu, then "
+        "mofforge_functionalize (or mofforge_functionalize_campaign to sweep "
+        "groups x coverages).  Pick site indices and a group name only; "
+        "geometry is generated automatically.\n"
         "- Call mofforge_validate after modifications to check for issues."
     ),
 )
@@ -901,6 +907,194 @@ def mofforge_list_adsorbates() -> str:
     from mofforge.mcp._impl import list_adsorbates_impl
 
     return json.dumps(list_adsorbates_impl(), indent=2)
+
+
+@mcp.tool(
+    name="mofforge_list_fragments",
+    description=(
+        "List the packaged moiety (fragment) XYZ files bundled with mofforge, "
+        "usable as query/replacement patterns for mofforge_replace."
+    ),
+)
+def mofforge_list_fragments() -> str:
+    """List packaged moiety fragment files."""
+    from mofforge.mcp._impl import list_fragments_impl
+
+    return json.dumps(list_fragments_impl(), indent=2)
+
+
+@mcp.tool(
+    name="mofforge_get_fragment",
+    description=(
+        "Resolve a packaged moiety fragment name (from mofforge_list_fragments) "
+        "to an absolute XYZ file path for use with mofforge_replace."
+    ),
+)
+def mofforge_get_fragment(name: str) -> str:
+    """Resolve a packaged moiety name to its file path.
+
+    Parameters
+    ----------
+    name : str
+        Fragment file name, e.g. '2-nitro-p-phenylene.xyz'.
+    """
+    from mofforge.mcp._impl import get_fragment_impl
+
+    return json.dumps(get_fragment_impl(name), indent=2)
+
+
+@mcp.tool(
+    name="mofforge_list_functional_groups",
+    description=(
+        "List the curated functional groups available for linker "
+        "functionalization (e.g. NH2, NO2, F, CH3, COOH).  The agent picks a "
+        "group name from this menu; it never authors SMILES or geometry."
+    ),
+)
+def mofforge_list_functional_groups() -> str:
+    """List curated functional groups for linker functionalization."""
+    from mofforge.mcp._impl import list_functional_groups_impl
+
+    return json.dumps(list_functional_groups_impl(), indent=2)
+
+
+@mcp.tool(
+    name="mofforge_find_sites",
+    description=(
+        "Given a linker SMILES (e.g. from MOFid), enumerate the functionalizable "
+        "aromatic C-H positions.  Each site has a stable integer 'index' the "
+        "agent selects, and a 'symmetry_class': equal classes are chemically "
+        "equivalent positions, distinct classes are different environments.  "
+        "Metal-binding groups carry no aromatic H and are never returned."
+    ),
+)
+def mofforge_find_sites(linker_smiles: str) -> str:
+    """Find functionalizable sites on a linker.
+
+    Parameters
+    ----------
+    linker_smiles : str
+        SMILES string of the linker to analyze.
+    """
+    from mofforge.mcp._impl import find_sites_impl
+
+    return json.dumps(find_sites_impl(linker_smiles), indent=2)
+
+
+@mcp.tool(
+    name="mofforge_functionalize",
+    description=(
+        "Functionalize a MOF linker with a chosen group at chosen site(s).  "
+        "Generates the geometry automatically (RDKit) from the linker SMILES, "
+        "then finds and replaces the linker in the framework.  'coverage' "
+        "(0-1) sets the fraction of linkers to functionalize (concentration).  "
+        "Multiple site indices produce a multi-substitution pattern."
+    ),
+)
+def mofforge_functionalize(
+    parent_cif: str,
+    linker_smiles: str,
+    group: str,
+    sites: list[int] | None = None,
+    coverage: float = 1.0,
+    output_cif: str = "functionalized.cif",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> str:
+    """Functionalize a MOF linker.
+
+    Parameters
+    ----------
+    parent_cif : str
+        Absolute path to the MOF CIF to functionalize.
+    linker_smiles : str
+        SMILES of the linker being modified (e.g. from MOFid).
+    group : str
+        Functional-group name from mofforge_list_functional_groups.
+    sites : list[int] | None
+        Site indices (from mofforge_find_sites) to functionalize on each linker.
+        Defaults to [0].  Multiple indices = multi-substitution pattern.
+    coverage : float
+        Fraction (0-1) of matched linkers to functionalize (1.0 = all).
+    output_cif : str
+        Output CIF file path.
+    validate : bool
+        Validate the resulting structure.
+    random_seed : int | None
+        Seed for reproducible location selection when coverage < 1.
+    """
+    from mofforge.mcp._impl import functionalize_impl
+
+    return json.dumps(
+        functionalize_impl(
+            parent_cif,
+            linker_smiles,
+            group,
+            sites=sites if sites is not None else 0,
+            coverage=coverage,
+            output_cif=output_cif,
+            validate=validate,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
+
+
+@mcp.tool(
+    name="mofforge_functionalize_campaign",
+    description=(
+        "Run a full functionalization campaign: sweep multiple functional "
+        "groups x coverages on a linker, validate each result, and return them "
+        "ranked best-first (valid structures first, then fewest steric "
+        "clashes).  The primary tool for autonomous functionalization."
+    ),
+)
+def mofforge_functionalize_campaign(
+    parent_cif: str,
+    linker_smiles: str,
+    groups: list[str],
+    coverages: list[float] | None = None,
+    sites: list[int] | None = None,
+    output_dir: str = "functionalization_campaign",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> str:
+    """Sweep groups x coverages and rank the functionalized structures.
+
+    Parameters
+    ----------
+    parent_cif : str
+        Absolute path to the MOF CIF to functionalize.
+    linker_smiles : str
+        SMILES of the linker being modified.
+    groups : list[str]
+        Functional-group names to sweep (from mofforge_list_functional_groups).
+    coverages : list[float] | None
+        Coverage fractions to sweep (default [0.25, 0.5, 1.0]).
+    sites : list[int] | None
+        Site indices to functionalize (default [0]).
+    output_dir : str
+        Directory for the per-combination CIF outputs.
+    validate : bool
+        Validate each result (needed for meaningful ranking).
+    random_seed : int | None
+        Seed for reproducible location selection.
+    """
+    from mofforge.mcp._impl import functionalize_campaign_impl
+
+    return json.dumps(
+        functionalize_campaign_impl(
+            parent_cif,
+            linker_smiles,
+            groups,
+            coverages=coverages,
+            sites=sites if sites is not None else 0,
+            output_dir=output_dir,
+            validate=validate,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
 
 
 def main():

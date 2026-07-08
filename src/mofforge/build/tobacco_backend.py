@@ -1,123 +1,114 @@
-"""TOBACCO 3.0 builder backend."""
+"""TOBACCO 3.0 builder backend (importable ``tobacco3`` API)."""
 
 from __future__ import annotations
 
-import ast
-import importlib
 import logging
-import os
-import re
-import shutil
-import sys
-from contextlib import contextmanager
+from dataclasses import fields
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Literal
 
-from mofforge.build.base import BuildResult, BuildingBlock, Timer, Topology
-from mofforge.build.config import ConfigError, validate_tobacco_path
+from mofforge.build.base import BuildingBlock, BuildResult, Timer, Topology
+from mofforge.build.config import ConfigError, validate_tobacco, validate_tobacco_data_dir
 from mofforge.core.crystal import Crystal
 
 logger = logging.getLogger("mofforge")
 
-# Module names that TOBACCO uses internally.  Cached here to avoid
-# duplicating the list in _tobacco_context()'s save and restore blocks.
-_TOBACCO_MODULES = (
-    "tobacco",
-    "configuration",
-    "ciftemplate2graph",
-    "vertex_edge_assign",
-    "cycle_cocyle",
-    "bbcif_properties",
-    "SBU_geometry",
-    "scale",
-    "scaled_embedding2coords",
-    "place_bbs",
-    "remove_net_charge",
-    "remove_dummy_atoms",
-    "adjust_edges",
-    "write_cifs",
-    "scale_animation",
-)
-
 
 class TobaccoBackend:
-    """Backend that delegates MOF construction to TOBACCO 3.0."""
+    """Backend that delegates MOF construction to the ``tobacco3`` package.
+
+    Uses the filesystem-independent ``tobacco3.generate_mof`` API: building
+    blocks and templates are fed in as in-memory objects and produced CIFs are
+    returned as :class:`tobacco3.MofResult` objects, so no working-directory
+    juggling or output scraping is required.  Topology and building-block CIFs
+    are discovered from the TOBACCO *data directory* (``template_database/``,
+    ``nodes_database/``, ``edges_database/``, and the active ``templates/``,
+    ``nodes/``, ``edges/`` folders).
+    """
 
     name: str = "tobacco"
 
-    def __init__(self, tobacco_path: Path | str) -> None:
-        self._root = Path(tobacco_path).resolve()
-        errors = validate_tobacco_path(self._root)
+    # Map a logical role to (active dir, database dir).  The active dirs are the
+    # small curated defaults shipped in the tobacco repo; the *_database dirs are
+    # the full catalog.  Both are searched when resolving a block/topology name.
+    _ROLE_DIRS: dict[str, tuple[str, str]] = {
+        "node": ("nodes", "nodes_database"),
+        "edge": ("edges", "edges_database"),
+        "template": ("templates", "template_database"),
+    }
+
+    def __init__(self, data_dir: Path | str) -> None:
+        errors = validate_tobacco()
         if errors:
-            details = "\n  ".join(errors)
-            raise ConfigError(f"Invalid TOBACCO installation at {self._root}:\n  {details}")
+            raise ConfigError("; ".join(errors))
 
-    @contextmanager
-    def _tobacco_context(self) -> Iterator[None]:
-        """Temporarily switch to TOBACCO's directory for execution."""
-        saved_cwd = os.getcwd()
-        saved_path = sys.path[:]
-        # Remove any previously cached tobacco modules so a fresh
-        # import picks up the current configuration.py on disk.
-        tobacco_modules = [k for k in sys.modules if k in _TOBACCO_MODULES]
-        saved_modules = {k: sys.modules.pop(k) for k in tobacco_modules}
-        try:
-            os.chdir(self._root)
-            sys.path.insert(0, str(self._root))
-            yield
-        finally:
-            os.chdir(saved_cwd)
-            sys.path[:] = saved_path
-            # Restore previously cached modules (if any) so we don't
-            # permanently pollute the module namespace.
-            for k in list(sys.modules):
-                if k in _TOBACCO_MODULES:
-                    del sys.modules[k]
-            sys.modules.update(saved_modules)
+        self._data_dir = Path(data_dir).resolve()
+        data_errors = validate_tobacco_data_dir(self._data_dir)
+        if data_errors:
+            details = "\n  ".join(data_errors)
+            raise ConfigError(
+                f"Invalid TOBACCO data directory at {self._data_dir}:\n  {details}"
+            )
 
-    def _dir_for_role(self, role: Literal["node", "edge", "template"]) -> Path:
-        """Map a logical role to the corresponding TOBACCO subdirectory."""
-        mapping = {
-            "node": "nodes",
-            "edge": "edges",
-            "template": "templates",
-        }
-        return self._root / mapping[role]
+        import tobacco3
 
-    def _db_dir_for_role(self, role: Literal["node", "edge", "template"]) -> Path:
-        """Map a logical role to the corresponding TOBACCO database directory."""
-        mapping = {
-            "node": "nodes_database",
-            "edge": "edges_database",
-            "template": "template_database",
-        }
-        return self._root / mapping[role]
+        self._tobacco3 = tobacco3
+        self._cfg = tobacco3.TobaccoConfig()
 
-    @staticmethod
-    def _list_cifs(directory: Path) -> list[str]:
-        """Return sorted CIF filenames in *directory*."""
-        if not directory.is_dir():
-            return []
-        return sorted(f.name for f in directory.iterdir() if f.suffix == ".cif")
+    # ------------------------------------------------------------------ #
+    # Data-directory helpers
+    # ------------------------------------------------------------------ #
+    def _search_dirs(self, role: Literal["node", "edge", "template"]) -> list[Path]:
+        """Return existing (database, active) directories to search for *role*."""
+        active, database = self._ROLE_DIRS[role]
+        dirs = [self._data_dir / database, self._data_dir / active]
+        return [d for d in dirs if d.is_dir()]
 
-    def _collect_outputs(self) -> dict[str, list[str]]:
-        """Return ``{subdirectory: [cif_names]}`` from ``output_cifs/``."""
-        output_dir = self._root / "output_cifs"
-        results: dict[str, list[str]] = {}
-        if not output_dir.is_dir():
-            return results
-        top_level_cifs: list[str] = []
-        for entry in sorted(output_dir.iterdir()):
-            if entry.is_file() and entry.suffix == ".cif":
-                top_level_cifs.append(entry.name)
-            elif entry.is_dir():
-                cifs = [f.name for f in entry.iterdir() if f.suffix == ".cif"]
-                if cifs:
-                    results[entry.name] = sorted(cifs)
-        if top_level_cifs:
-            results["."] = sorted(top_level_cifs)
-        return results
+    def _list_cifs(self, role: Literal["node", "edge", "template"]) -> list[str]:
+        """Return the sorted union of ``.cif`` names available for *role*."""
+        names: set[str] = set()
+        for d in self._search_dirs(role):
+            names.update(f.name for f in d.iterdir() if f.suffix == ".cif")
+        return sorted(names)
 
+    def _resolve_cif(
+        self, role: Literal["node", "edge", "template"], name: str
+    ) -> Path | None:
+        """Resolve a bare block/topology *name* to a concrete CIF path.
+
+        Accepts either an existing filesystem path or a name looked up in the
+        role's database / active directories (``.cif`` suffix optional).
+        """
+        p = Path(name)
+        if p.is_file():
+            return p.resolve()
+
+        cif_name = name if name.endswith(".cif") else f"{name}.cif"
+        for d in self._search_dirs(role):
+            candidate = d / cif_name
+            if candidate.is_file():
+                return candidate.resolve()
+        return None
+
+    def _to_tobacco_bb(self, block: BuildingBlock) -> Any:
+        """Convert a mofforge :class:`BuildingBlock` to a ``tobacco3.BuildingBlock``.
+
+        The block's *name* preserves the CIF basename because the TOBACCO
+        pipeline keys some behavior off it (e.g. the ``ntn_edge.cif`` special
+        case), so identity must survive the round-trip.
+        """
+        path = self._resolve_cif(block.role, str(block.source))
+        if path is None:
+            raise FileNotFoundError(
+                f"Could not resolve {block.role} '{block.source}' to a CIF file "
+                f"(searched {[str(d) for d in self._search_dirs(block.role)]})"
+            )
+        name = path.name if path.name.endswith(".cif") else f"{path.name}.cif"
+        return self._tobacco3.BuildingBlock.from_cif(str(path), name=name)
+
+    # ------------------------------------------------------------------ #
+    # Build
+    # ------------------------------------------------------------------ #
     def build(
         self,
         topology: Topology,
@@ -125,105 +116,92 @@ class TobaccoBackend:
         edges: list[BuildingBlock],
         output_dir: Path,
         *,
-        parallel: bool = False,
-        ignore_errors: bool = True,
+        verbose: bool = False,
         **options: Any,
     ) -> BuildResult:
-        """Run TOBACCO to generate MOF structures."""
+        """Run ``tobacco3.generate_mof`` to construct MOF structure(s)."""
         output_dir = Path(output_dir).resolve()
-        output_dir.mkdir(parents=True, exist_ok=True)
 
-        template_name = topology.name
-        if not template_name.endswith(".cif"):
-            template_name += ".cif"
-
-        # Stage building blocks: clear existing files and copy in
-        # the explicitly passed nodes/edges so TOBACCO sees exactly
-        # what the caller specified.
-        stage_errors = self._stage_building_blocks(nodes, edges)
-        if stage_errors:
+        if not nodes:
             return BuildResult(
                 success=False,
-                errors=stage_errors,
+                errors=["No node building blocks provided."],
+                backend=self.name,
+            )
+        if not edges:
+            return BuildResult(
+                success=False,
+                errors=["No edge building blocks provided."],
                 backend=self.name,
             )
 
-        # Snapshot existing outputs so we can detect new ones.
-        initial_outputs = self._snapshot_outputs()
+        # Resolve template.  Prefer an explicit source path, else look up the
+        # topology name in template_database / templates.
+        template_ref = topology.source or topology.name
+        template_path = self._resolve_cif("template", str(template_ref))
+        if template_path is None:
+            return BuildResult(
+                success=False,
+                errors=[
+                    f"Topology '{topology.name}' not found in "
+                    f"{[str(d) for d in self._search_dirs('template')]}"
+                ],
+                backend=self.name,
+            )
 
+        try:
+            template_obj = self._tobacco3.Template.from_cif(str(template_path))
+            node_objs = [self._to_tobacco_bb(n) for n in nodes]
+            edge_objs = [self._to_tobacco_bb(e) for e in edges]
+        except Exception as exc:
+            return BuildResult(
+                success=False,
+                errors=[f"Failed to load building blocks: {exc}"],
+                backend=self.name,
+            )
+
+        results: list[Any] = []
         errors: list[str] = []
-        processed: list[str] = []
-        templates: list[str] = []
-
         timer = Timer()
-        with timer, self._tobacco_context():
+        with timer:
             try:
-                tobacco_mod = importlib.import_module("tobacco")
-                run_template = tobacco_mod.run_template
+                results = self._tobacco3.generate_mof(
+                    template_obj,
+                    node_objs,
+                    edge_objs,
+                    config=self._cfg,
+                    quiet=not verbose,
+                )
             except Exception as exc:
+                logger.warning("tobacco3.generate_mof failed", exc_info=True)
                 return BuildResult(
                     success=False,
-                    errors=[f"Failed to import tobacco: {exc}"],
+                    errors=[f"generate_mof failed: {exc}"],
+                    elapsed_seconds=round(timer.elapsed, 2),
                     backend=self.name,
                 )
 
-            # Clean stray .DS_Store files
-            for d in ("templates", "nodes", "edges"):
-                ds = Path(d) / ".DS_Store"
-                if ds.exists():
-                    ds.unlink()
+        if not results:
+            return BuildResult(
+                success=False,
+                errors=[
+                    "generate_mof produced no structures "
+                    "(no valid vertex/edge assignment for this topology + building blocks)."
+                ],
+                elapsed_seconds=round(timer.elapsed, 2),
+                backend=self.name,
+            )
 
-            # Determine template list
-            templates_dir = Path("templates")
-            if template_name == "all.cif" or template_name == "all":
-                templates = sorted(f.name for f in templates_dir.iterdir() if f.suffix == ".cif")
-            else:
-                if not (templates_dir / template_name).exists():
-                    return BuildResult(
-                        success=False,
-                        errors=[
-                            f"Template '{template_name}' not found in {self._root / 'templates'}"
-                        ],
-                        backend=self.name,
-                    )
-                templates = [template_name]
-
-            if parallel:
-                try:
-                    run_parallel = tobacco_mod.run_tobacco_parallel
-                    cfg = importlib.import_module("configuration")
-                    run_parallel(templates, cfg.CHARGES)
-                    processed = list(templates)
-                except Exception as exc:
-                    errors.append(f"Parallel execution failed: {exc}")
-            else:
-                for tmpl in templates:
-                    try:
-                        run_template(tmpl)
-                        processed.append(tmpl)
-                    except Exception as exc:
-                        msg = f"Template '{tmpl}' failed: {exc}"
-                        if not ignore_errors:
-                            errors.append(msg)
-                            break
-                        errors.append(msg)
-                        logger.warning(msg)
-
-        # Detect new output CIFs
-        current_outputs = self._snapshot_outputs()
-        new_paths = sorted(current_outputs - initial_outputs)
-
-        # Copy new outputs to the requested output_dir
+        # Persist every produced structure.
+        output_dir.mkdir(parents=True, exist_ok=True)
         copied: list[Path] = []
-        for p in new_paths:
-            dst = output_dir / p.name
+        for r in results:
             try:
-                shutil.copy2(p, dst)
-                copied.append(dst)
+                copied.append(Path(r.write(str(output_dir))))
             except Exception as exc:
-                errors.append(f"Failed to copy {p} -> {dst}: {exc}")
+                errors.append(f"Failed to write {r.cifname}: {exc}")
 
-        # Load the first output as a Crystal
+        # Load the first structure as a Crystal for downstream inspection.
         crystal: Crystal | None = None
         if copied:
             try:
@@ -234,111 +212,66 @@ class TobaccoBackend:
             except Exception as exc:
                 logger.warning("Could not load output CIF as Crystal: %s", exc)
 
-        success = len(errors) == 0 or (ignore_errors and len(processed) > 0)
-
         return BuildResult(
-            success=success,
+            success=bool(copied),
             output_paths=copied,
             crystal=crystal,
             errors=errors,
             elapsed_seconds=round(timer.elapsed, 2),
             backend=self.name,
             metadata={
-                "templates_requested": templates,
-                "templates_processed": processed,
-                "parallel": parallel,
+                "topology": topology.name,
+                "n_structures": len(results),
+                "structures": [
+                    {
+                        "cifname": r.cifname,
+                        "n_atoms": r.n_atoms,
+                        "net_charge": r.net_charge,
+                        "bond_check_passed": r.bond_check_passed,
+                    }
+                    for r in results
+                ],
             },
         )
 
-    def _snapshot_outputs(self) -> set[Path]:
-        """Return the set of all CIF paths currently in ``output_cifs/``."""
-        output_dir = self._root / "output_cifs"
-        paths: set[Path] = set()
-        if output_dir.is_dir():
-            for entry in output_dir.iterdir():
-                if entry.is_file() and entry.suffix == ".cif":
-                    paths.add(entry.resolve())
-                elif entry.is_dir():
-                    for f in entry.iterdir():
-                        if f.suffix == ".cif":
-                            paths.add(f.resolve())
-        return paths
-
-    def _stage_building_blocks(
-        self,
-        nodes: list[BuildingBlock],
-        edges: list[BuildingBlock],
-    ) -> list[str]:
-        """Clear TOBACCO's ``nodes/`` and ``edges/`` dirs and copy in the given blocks."""
-        errors: list[str] = []
-
-        if not nodes and not edges:
-            logger.debug("build() called with no nodes or edges; skipping staging")
-            return errors
-
-        # Clear existing CIFs in nodes/ and edges/
-        for role in ("node", "edge"):
-            self.clear_building_blocks(role, dry_run=False)
-
-        # Copy in the passed building blocks
-        for block in nodes:
-            result = self.add_building_block(block)
-            if not result.get("success"):
-                errors.append(
-                    f"Failed to stage node '{block.name}': {result.get('error', 'unknown error')}"
-                )
-
-        for block in edges:
-            result = self.add_building_block(block)
-            if not result.get("success"):
-                errors.append(
-                    f"Failed to stage edge '{block.name}': {result.get('error', 'unknown error')}"
-                )
-
-        if nodes or edges:
-            staged_nodes = self._list_cifs(self._dir_for_role("node"))
-            staged_edges = self._list_cifs(self._dir_for_role("edge"))
-            logger.debug(
-                "Staged %d node(s) and %d edge(s) for TOBACCO build",
-                len(staged_nodes),
-                len(staged_edges),
-            )
-
-        return errors
-
+    # ------------------------------------------------------------------ #
+    # Topology / building-block discovery
+    # ------------------------------------------------------------------ #
     def list_topologies(self) -> list[str]:
-        """List available template CIF files."""
-        return self._list_cifs(self._dir_for_role("template"))
+        """List available topology template CIF names."""
+        return self._list_cifs("template")
 
     def describe_topology(self, name: str) -> str:
-        """Return basic information about a template."""
-        if not name.endswith(".cif"):
-            name += ".cif"
-        path = self._dir_for_role("template") / name
-        if not path.exists():
+        """Return basic information about a topology template."""
+        path = self._resolve_cif("template", name)
+        if path is None:
             return f"Template '{name}' not found."
-        size = path.stat().st_size
-        return f"Template: {name} ({size} bytes)"
+        return f"Template: {path.name} ({path.stat().st_size} bytes) [{path.parent.name}]"
 
     def list_building_blocks(self, role: Literal["node", "edge"]) -> list[str]:
-        """List CIF files in the ``nodes/`` or ``edges/`` directory."""
-        return self._list_cifs(self._dir_for_role(role))
+        """List available node or edge building-block CIF names."""
+        return self._list_cifs(role)
 
     def add_building_block(self, block: BuildingBlock) -> dict[str, Any]:
-        """Copy a CIF file into the appropriate TOBACCO directory."""
-        src = Path(block.source).resolve()
-        if not src.is_file():
-            return {"success": False, "error": f"Source file not found: {src}"}
-        if not src.suffix == ".cif":
+        """Validate that *block* resolves to a usable CIF.
+
+        Registration is tracked in-memory by :class:`~mofforge.build.builder.MOFBuilder`;
+        the block is passed directly to ``generate_mof`` at build time, so nothing
+        is copied onto disk here.
+        """
+        src = str(block.source)
+        if src.endswith((".xyz", ".mol2")):
             return {"success": False, "error": "TOBACCO building blocks must be CIF files"}
 
-        dest_dir = self._dir_for_role(block.role)
-        dest = dest_dir / (block.name + ".cif" if not block.name.endswith(".cif") else block.name)
-        try:
-            shutil.copy2(src, dest)
-            return {"success": True, "file": str(dest)}
-        except Exception as exc:
-            return {"success": False, "error": str(exc)}
+        path = self._resolve_cif(block.role, src)
+        if path is None:
+            return {
+                "success": False,
+                "error": f"Could not resolve {block.role} '{src}' to a CIF file",
+            }
+        if path.suffix != ".cif":
+            return {"success": False, "error": "TOBACCO building blocks must be CIF files"}
+        return {"success": True, "file": str(path)}
 
     def remove_building_blocks(
         self,
@@ -346,37 +279,20 @@ class TobaccoBackend:
         names: list[str],
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Remove specific CIF files from a TOBACCO directory."""
-        target_dir = self._dir_for_role(role)
-        available = set(self._list_cifs(target_dir))
+        """Building blocks are registered in-memory; removal is a caller-side op.
 
-        to_remove = [n for n in names if n in available]
-        not_found = [n for n in names if n not in available]
-
-        if dry_run:
-            return {
-                "success": True,
-                "dry_run": True,
-                "would_remove": to_remove,
-                "not_found": not_found if not_found else None,
-                "count": len(to_remove),
-            }
-
-        removed: list[str] = []
-        errors: list[dict[str, str]] = []
-        for f in to_remove:
-            try:
-                (target_dir / f).unlink()
-                removed.append(f)
-            except Exception as exc:
-                errors.append({"file": f, "error": str(exc)})
-
+        Kept for backend-protocol compatibility.  Reports which of *names* are
+        known in the catalog but does not touch any files.
+        """
+        available = set(self._list_cifs(role))
+        matched = [n for n in names if n in available or f"{n}.cif" in available]
         return {
-            "success": len(errors) == 0,
-            "removed": removed,
-            "count": len(removed),
-            "errors": errors if errors else None,
-            "dry_run": False,
+            "success": True,
+            "dry_run": dry_run,
+            "removed": [] if dry_run else matched,
+            "would_remove": matched if dry_run else [],
+            "count": len(matched),
+            "note": "TOBACCO building blocks are registered in-memory; no files removed.",
         }
 
     def clear_building_blocks(
@@ -384,33 +300,13 @@ class TobaccoBackend:
         role: Literal["node", "edge"],
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Remove **all** CIF files for the given role."""
-        target_dir = self._dir_for_role(role)
-        cifs = self._list_cifs(target_dir)
-
-        if dry_run:
-            return {
-                "success": True,
-                "dry_run": True,
-                "would_remove": cifs,
-                "count": len(cifs),
-            }
-
-        removed: list[str] = []
-        errors: list[dict[str, str]] = []
-        for f in cifs:
-            try:
-                (target_dir / f).unlink()
-                removed.append(f)
-            except Exception as exc:
-                errors.append({"file": f, "error": str(exc)})
-
+        """No-op for the importable backend (registration is in-memory)."""
         return {
-            "success": len(errors) == 0,
-            "removed": removed,
-            "count": len(removed),
-            "errors": errors if errors else None,
-            "dry_run": False,
+            "success": True,
+            "dry_run": dry_run,
+            "removed": [],
+            "count": 0,
+            "note": "TOBACCO building blocks are registered in-memory; nothing to clear.",
         }
 
     def copy_from_database(
@@ -420,188 +316,88 @@ class TobaccoBackend:
         source: Path | None = None,
         dry_run: bool = True,
     ) -> dict[str, Any]:
-        """Copy building blocks from a database directory into the active directory."""
-        # Also support "template" role for internal use
+        """List catalog entries or resolve names to CIF paths.
+
+        With the in-memory API there is no active directory to copy into, so this
+        reduces to catalog discovery: ``names=None`` lists everything available;
+        otherwise it resolves each requested name to its CIF path.
+        """
         role_key: Literal["node", "edge", "template"] = role  # type: ignore[assignment]
-        target_dir = self._dir_for_role(role_key)
 
         if source is not None:
             source = Path(source).resolve()
             if not source.exists():
                 return {"success": False, "error": f"Source path not found: {source}"}
             if source.is_file():
-                # Copy a single file
-                if not source.suffix == ".cif":
-                    return {"success": False, "error": "Source file must be a .cif file"}
-                if dry_run:
-                    return {
-                        "success": True,
-                        "dry_run": True,
-                        "would_copy": [source.name],
-                        "source": str(source),
-                        "destination": str(target_dir),
-                        "count": 1,
-                    }
-                dst = target_dir / source.name
-                shutil.copy2(source, dst)
                 return {
                     "success": True,
-                    "copied": [source.name],
-                    "source": str(source),
-                    "destination": str(target_dir),
+                    "resolved": {source.name: str(source)},
                     "count": 1,
-                    "dry_run": False,
                 }
-            db_dir = source
+            available_map = {f.name: f for f in source.rglob("*.cif")}
         else:
-            db_dir = self._db_dir_for_role(role_key)
-            if not db_dir.is_dir():
-                return {
-                    "success": False,
-                    "error": f"Database directory not found: {db_dir}",
-                }
+            available_map = {}
+            for d in self._search_dirs(role_key):
+                for f in d.iterdir():
+                    if f.suffix == ".cif":
+                        available_map.setdefault(f.name, f)
 
-        # Collect available CIFs in the database (recursively).
-        # Build a name -> path index so we can copy without re-walking.
-        available_map: dict[str, Path] = {}
-        for f in db_dir.rglob("*.cif"):
-            available_map.setdefault(f.name, f)
-        available: list[str] = sorted(available_map)
+        available = sorted(available_map)
 
         if names is None:
-            result: dict[str, Any] = {
+            return {
                 "success": True,
                 "available_in_database": available,
                 "count": len(available),
             }
-            if source is not None:
-                result["source"] = str(source)
-            return result
 
-        # Determine which files to copy
-        available_set = set(available)
-        to_copy = [n for n in names if n in available_set]
-        not_found = [n for n in names if n not in available_set]
+        resolved: dict[str, str] = {}
+        not_found: list[str] = []
+        for n in names:
+            key = n if n.endswith(".cif") else f"{n}.cif"
+            if key in available_map:
+                resolved[key] = str(available_map[key])
+            else:
+                not_found.append(n)
 
-        if dry_run:
-            result = {
-                "success": True,
-                "dry_run": True,
-                "would_copy": to_copy,
-                "not_found": not_found if not_found else None,
-                "count": len(to_copy),
-            }
-            if source is not None:
-                result["source"] = str(source)
-            return result
-
-        # Actually copy (use the index built above to avoid re-walking)
-        copied: list[str] = []
-        errors: list[dict[str, str]] = []
-        for fname in to_copy:
-            src = available_map.get(fname)
-            if src is not None:
-                dst = target_dir / fname
-                try:
-                    shutil.copy2(src, dst)
-                    copied.append(fname)
-                except Exception as exc:
-                    errors.append({"file": fname, "error": str(exc)})
-
-        result = {
-            "success": len(errors) == 0,
-            "copied": copied,
-            "count": len(copied),
-            "errors": errors if errors else None,
-            "dry_run": False,
+        return {
+            "success": not not_found,
+            "resolved": resolved,
+            "not_found": not_found or None,
+            "count": len(resolved),
         }
-        if source is not None:
-            result["source"] = str(source)
-        return result
 
+    # ------------------------------------------------------------------ #
+    # Configuration (backed by tobacco3.TobaccoConfig)
+    # ------------------------------------------------------------------ #
     def get_configuration(self) -> dict[str, Any]:
-        """Read TOBACCO's ``configuration.py`` and return values as a dict."""
-        config_file = self._root / "configuration.py"
-        if not config_file.is_file():
-            return {"success": False, "error": "configuration.py not found"}
-
-        config: dict[str, Any] = {}
-        content = config_file.read_text()
-        for line in content.strip().splitlines():
-            line = line.strip()
-            if line and "=" in line and not line.startswith("#"):
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip()
-                try:
-                    config[key] = ast.literal_eval(value)
-                except (ValueError, SyntaxError):
-                    config[key] = value
-
-        return {"success": True, "configuration": config, "file": str(config_file)}
+        """Return the current :class:`tobacco3.TobaccoConfig` as a dict."""
+        return {"success": True, "configuration": self._cfg.as_dict()}
 
     def set_configuration(self, key: str, value: Any) -> dict[str, Any]:
-        """Set a single key in TOBACCO's ``configuration.py``."""
-        config_file = self._root / "configuration.py"
-        if not config_file.is_file():
-            return {"success": False, "error": "configuration.py not found"}
+        """Set a single :class:`tobacco3.TobaccoConfig` field."""
+        valid = {f.name for f in fields(self._cfg)}
+        if key not in valid:
+            return {
+                "success": False,
+                "error": f"Unknown configuration key '{key}'. Valid keys: {sorted(valid)}",
+            }
+        setattr(self._cfg, key, value)
+        return {"success": True, "message": f"Set {key} = {value!r}"}
 
-        # Determine the text to write as the value.
-        if isinstance(value, str):
-            try:
-                ast.literal_eval(value)
-                value_text = value  # already a valid Python literal
-            except (ValueError, SyntaxError):
-                value_text = repr(value)
-        else:
-            value_text = repr(value)
-
-        lines = config_file.read_text().splitlines(keepends=True)
-        found = False
-        key_pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-        new_lines: list[str] = []
-        for line in lines:
-            stripped = line.strip()
-            if key_pattern.match(stripped):
-                new_lines.append(f"{key} = {value_text}\n")
-                found = True
-            else:
-                new_lines.append(line)
-
-        if not found:
-            return {"success": False, "error": f"Configuration key '{key}' not found"}
-
-        config_file.write_text("".join(new_lines))
-        return {"success": True, "message": f"Set {key} = {value_text}", "file": str(config_file)}
-
+    # ------------------------------------------------------------------ #
+    # Status
+    # ------------------------------------------------------------------ #
     def status(self) -> dict[str, Any]:
-        """Return overall status of the TOBACCO installation."""
-        templates = self._list_cifs(self._dir_for_role("template"))
-        nodes = self._list_cifs(self._dir_for_role("node"))
-        edges = self._list_cifs(self._dir_for_role("edge"))
-        outputs = self._collect_outputs()
-        config = self.get_configuration()
-
+        """Return overall status of the TOBACCO data directory and config."""
         return {
             "success": True,
-            "project_root": str(self._root),
-            "templates_available": len(templates),
-            "nodes_available": len(nodes),
-            "edges_available": len(edges),
-            "output_directories": len(outputs),
-            "configuration": config.get("configuration", {}),
+            "backend": self.name,
+            "tobacco3_version": getattr(self._tobacco3, "__version__", "unknown"),
+            "data_dir": str(self._data_dir),
+            "templates_available": len(self._list_cifs("template")),
+            "nodes_available": len(self._list_cifs("node")),
+            "edges_available": len(self._list_cifs("edge")),
+            "configuration": self._cfg.as_dict(),
             "ready": True,
-        }
-
-    def list_outputs(self) -> dict[str, Any]:
-        """List generated output CIF files organised by subdirectory."""
-        outputs = self._collect_outputs()
-        entries = [
-            {"directory": d, "cif_files": cifs, "count": len(cifs)} for d, cifs in outputs.items()
-        ]
-        return {
-            "success": True,
-            "output_directories": len(entries),
-            "outputs": entries,
-            "directory": str(self._root / "output_cifs"),
         }

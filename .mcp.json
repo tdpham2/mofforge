@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mofforge": {
+      "type": "stdio",
+      "command": "/Users/tpham2/work/soft/mofforge/.venv/bin/mofforge-mcp",
+      "args": [],
+      "env": {
+        "MOFFORGE_LOG_DIR": "/tmp/mofforge_out"
+      }
+    }
+  }
+}
