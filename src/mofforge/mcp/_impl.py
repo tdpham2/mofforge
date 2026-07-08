@@ -24,8 +24,14 @@ logger = logging.getLogger("mofforge.mcp")
 
 __all__ = [
     "build_impl",
+    "find_sites_impl",
+    "functionalize_campaign_impl",
+    "functionalize_impl",
+    "get_fragment_impl",
     "get_structure_impl",
     "list_adsorbates_impl",
+    "list_fragments_impl",
+    "list_functional_groups_impl",
     "load_crystal",
     "load_fragment",
     "lookup_mof_impl",
@@ -456,6 +462,190 @@ def build_impl(
         }
     except Exception as exc:
         logger.warning("build failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Packaged moiety library discovery
+# ---------------------------------------------------------------------------
+
+
+def list_fragments_impl() -> dict[str, Any]:
+    """List the packaged moiety (fragment) XYZ files bundled with mofforge."""
+    try:
+        from mofforge.data import list_moieties, moieties_dir
+
+        names = list_moieties()
+        return {
+            "success": True,
+            "count": len(names),
+            "directory": str(moieties_dir()),
+            "fragments": names,
+        }
+    except Exception as exc:
+        logger.warning("list_fragments failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+def get_fragment_impl(name: str) -> dict[str, Any]:
+    """Resolve a packaged moiety name to its absolute XYZ file path."""
+    try:
+        from mofforge.data import moiety_path
+
+        path = moiety_path(name)
+        return {"success": True, "name": name, "path": str(path)}
+    except Exception as exc:
+        logger.warning("get_fragment failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Functionalization tools
+# ---------------------------------------------------------------------------
+
+
+def list_functional_groups_impl() -> dict[str, Any]:
+    """List the curated functional groups an agent may graft onto a linker."""
+    try:
+        from mofforge.functionalize.groups import _GROUPS, available_groups
+
+        return {
+            "success": True,
+            "count": len(_GROUPS),
+            "groups": [
+                {"name": g.name, "description": g.description}
+                for g in (_GROUPS[name] for name in available_groups())
+            ],
+        }
+    except Exception as exc:
+        logger.warning("list_functional_groups failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+def find_sites_impl(linker_smiles: str) -> dict[str, Any]:
+    """Enumerate functionalizable aromatic C-H sites on a linker SMILES.
+
+    Each site has a stable ``index`` (what the agent selects) and a
+    ``symmetry_class``: equal classes are chemically equivalent positions;
+    distinct classes are different chemical environments.
+    """
+    try:
+        from mofforge.functionalize.sites import find_functionalizable_sites
+
+        sites = find_functionalizable_sites(linker_smiles)
+        n_classes = len({s.symmetry_class for s in sites})
+        return {
+            "success": True,
+            "linker_smiles": linker_smiles,
+            "n_sites": len(sites),
+            "n_symmetry_classes": n_classes,
+            "sites": [
+                {
+                    "index": s.index,
+                    "symmetry_class": s.symmetry_class,
+                    "element": s.element,
+                    "ring_id": s.ring_id,
+                    "description": s.description,
+                }
+                for s in sites
+            ],
+        }
+    except Exception as exc:
+        logger.warning("find_sites failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+def functionalize_impl(
+    parent_cif: str,
+    linker_smiles: str,
+    group: str,
+    sites: int | list[int] = 0,
+    coverage: float = 1.0,
+    output_cif: str = "functionalized.cif",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> dict[str, Any]:
+    """Functionalize a MOF linker with a chosen group at chosen site(s)."""
+    try:
+        from mofforge.functionalize.campaign import functionalize
+
+        out_path = resolve_output(output_cif)
+        res = functionalize(
+            parent_cif,
+            linker_smiles,
+            group,
+            sites=sites,
+            coverage=coverage,
+            output_cif=out_path,
+            validate=validate,
+            random_seed=random_seed,
+        )
+        if res.error is not None:
+            return {"success": False, "error": res.error}
+        return {
+            "success": True,
+            "group": res.group,
+            "sites": res.sites,
+            "coverage": res.coverage,
+            "n_matches": res.n_matches,
+            "n_functionalized": res.n_functionalized,
+            "output_cif": res.output_cif,
+            "is_valid": res.is_valid,
+            "clashes": res.clashes,
+            "validation_summary": res.validation_summary,
+        }
+    except Exception as exc:
+        logger.warning("functionalize failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+def functionalize_campaign_impl(
+    parent_cif: str,
+    linker_smiles: str,
+    groups: list[str],
+    coverages: list[float] | None = None,
+    sites: int | list[int] = 0,
+    output_dir: str = "functionalization_campaign",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> dict[str, Any]:
+    """Sweep groups x coverages, functionalize each, return ranked results."""
+    try:
+        from mofforge.functionalize.campaign import run_campaign
+
+        out_dir = resolve_output(os.path.join(output_dir, "placeholder"))
+        out_dir = str(Path(out_dir).parent)
+
+        results = run_campaign(
+            parent_cif,
+            linker_smiles,
+            groups=groups,
+            coverages=coverages,
+            sites=sites,
+            output_dir=out_dir,
+            validate=validate,
+            random_seed=random_seed,
+        )
+        return {
+            "success": True,
+            "n_results": len(results),
+            "results": [
+                {
+                    "group": r.group,
+                    "sites": r.sites,
+                    "coverage": r.coverage,
+                    "n_matches": r.n_matches,
+                    "n_functionalized": r.n_functionalized,
+                    "output_cif": r.output_cif,
+                    "is_valid": r.is_valid,
+                    "clashes": r.clashes,
+                    "error": r.error,
+                }
+                for r in results
+            ],
+        }
+    except Exception as exc:
+        logger.warning("functionalize_campaign failed", exc_info=True)
         return {"success": False, "error": str(exc)}
 
 

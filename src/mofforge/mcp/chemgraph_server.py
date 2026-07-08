@@ -211,6 +211,96 @@ def build_server():
             check_coordination=check_coordination,
         )
 
+    @mcp.tool(
+        name="mofforge_list_fragments",
+        description="List packaged moiety fragment XYZ files bundled with mofforge.",
+    )
+    def mofforge_list_fragments() -> dict:
+        return _impl.list_fragments_impl()
+
+    @mcp.tool(
+        name="mofforge_get_fragment",
+        description="Resolve a packaged moiety fragment name to an absolute XYZ path.",
+    )
+    def mofforge_get_fragment(name: str) -> dict:
+        return _impl.get_fragment_impl(name)
+
+    @mcp.tool(
+        name="mofforge_list_functional_groups",
+        description="List curated functional groups for linker functionalization.",
+    )
+    def mofforge_list_functional_groups() -> dict:
+        return _impl.list_functional_groups_impl()
+
+    @mcp.tool(
+        name="mofforge_find_sites",
+        description=(
+            "Enumerate functionalizable aromatic C-H sites on a linker SMILES; "
+            "each has an 'index' to select and a 'symmetry_class'."
+        ),
+    )
+    def mofforge_find_sites(linker_smiles: str) -> dict:
+        return _impl.find_sites_impl(linker_smiles)
+
+    # ---- Backend (heavy) tools ----------------------------------------- #
+    @mcp.tool(
+        name="mofforge_functionalize",
+        description=(
+            "Functionalize a MOF linker with a chosen group at chosen site(s); "
+            "geometry generated automatically, coverage sets concentration."
+        ),
+        **_BUILD_TASK,
+    )
+    def mofforge_functionalize(
+        parent_cif: str,
+        linker_smiles: str,
+        group: str,
+        sites: list[int] | None = None,
+        coverage: float = 1.0,
+        output_cif: str = "functionalized.cif",
+        validate: bool = True,
+        random_seed: int | None = None,
+    ) -> dict:
+        return _impl.functionalize_impl(
+            parent_cif,
+            linker_smiles,
+            group,
+            sites=sites if sites is not None else 0,
+            coverage=coverage,
+            output_cif=output_cif,
+            validate=validate,
+            random_seed=random_seed,
+        )
+
+    @mcp.tool(
+        name="mofforge_functionalize_campaign",
+        description=(
+            "Sweep functional groups x coverages on a linker, validate each, "
+            "and return results ranked best-first (valid, then fewest clashes)."
+        ),
+        **_BUILD_TASK,
+    )
+    def mofforge_functionalize_campaign(
+        parent_cif: str,
+        linker_smiles: str,
+        groups: list[str],
+        coverages: list[float] | None = None,
+        sites: list[int] | None = None,
+        output_dir: str = "functionalization_campaign",
+        validate: bool = True,
+        random_seed: int | None = None,
+    ) -> dict:
+        return _impl.functionalize_campaign_impl(
+            parent_cif,
+            linker_smiles,
+            groups,
+            coverages=coverages,
+            sites=sites if sites is not None else 0,
+            output_dir=output_dir,
+            validate=validate,
+            random_seed=random_seed,
+        )
+
     # ---- Backend (heavy) tools ----------------------------------------- #
     @mcp.tool(
         name="mofforge_build",

@@ -173,6 +173,88 @@ def test_stock_server_tool_returns_json(coremof_csv):
 
 
 # ---------------------------------------------------------------------------
+# Functionalization + fragment-discovery tools
+# ---------------------------------------------------------------------------
+
+
+def test_list_functional_groups_impl():
+    out = _impl.list_functional_groups_impl()
+    assert out["success"] is True
+    assert out["count"] >= 1
+    names = {g["name"] for g in out["groups"]}
+    assert {"NH2", "NO2", "F"} <= names
+
+
+def test_find_sites_impl():
+    out = _impl.find_sites_impl("O=C(O)c1ccc(C(=O)O)cc1")
+    assert out["success"] is True
+    assert out["n_sites"] == 4
+    assert out["n_symmetry_classes"] == 1
+
+
+def test_functionalize_impl(host_cif, tmp_path):
+    pytest.importorskip("rdkit")
+    out = _impl.functionalize_impl(
+        host_cif,
+        "O=C(O)c1ccc(C(=O)O)cc1",
+        "F",
+        sites=[0],
+        coverage=0.5,
+        output_cif=str(tmp_path / "f.cif"),
+        random_seed=1,
+    )
+    assert out["success"] is True
+    assert out["n_matches"] == 24
+    assert out["n_functionalized"] == 12
+
+
+def test_functionalize_campaign_impl(host_cif, tmp_path):
+    pytest.importorskip("rdkit")
+    out = _impl.functionalize_campaign_impl(
+        host_cif,
+        "O=C(O)c1ccc(C(=O)O)cc1",
+        ["F", "NH2"],
+        coverages=[1.0],
+        output_dir=str(tmp_path),
+        random_seed=1,
+    )
+    assert out["success"] is True
+    assert out["n_results"] == 2
+
+
+def test_list_and_get_fragment_impl():
+    listed = _impl.list_fragments_impl()
+    assert listed["success"] is True
+    assert listed["count"] >= 1
+    name = listed["fragments"][0]
+    got = _impl.get_fragment_impl(name)
+    assert got["success"] is True
+    assert got["path"].endswith(name)
+
+
+def test_get_fragment_impl_unknown():
+    out = _impl.get_fragment_impl("does_not_exist.xyz")
+    assert out["success"] is False
+
+
+def test_stock_server_registers_functionalization_tools():
+    import asyncio
+
+    from mofforge.mcp import server
+
+    names = {t.name for t in asyncio.run(server.mcp.list_tools())}
+    for expected in (
+        "mofforge_list_functional_groups",
+        "mofforge_find_sites",
+        "mofforge_functionalize",
+        "mofforge_functionalize_campaign",
+        "mofforge_list_fragments",
+        "mofforge_get_fragment",
+    ):
+        assert expected in names
+
+
+# ---------------------------------------------------------------------------
 # CGFastMCP adapter (only when ChemGraph is installed)
 # ---------------------------------------------------------------------------
 
