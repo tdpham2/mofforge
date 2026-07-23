@@ -52,7 +52,7 @@ build = [
     "tobacco3 @ git+https://github.com/tdpham2/tobacco_3.0.git",
 ]
 mcp = [
-    "mcp[cli]>=1.0",
+    "mcp[cli]>=1.16,<2",
 ]
 chemgraph = [
     # ChemGraph CGFastMCP HPC adapter (mofforge-mcp-chemgraph entry point).

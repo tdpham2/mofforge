@@ -48,7 +48,7 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 ### Visualization & AI Integration
 
 - Structure rendering to PNG via 3Dmol.js + Playwright (ball-stick, stick, sphere representations)
-- MCP (Model Context Protocol) server exposing 17 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
+- MCP (Model Context Protocol) server exposing 23 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
 - Optional [ChemGraph](https://github.com/argonne-lcf/ChemGraph) integration -- an HPC-aware `CGFastMCP` server for backend execution and ensemble fan-out (see [docs/chemgraph.md](docs/chemgraph.md))
 - Atom labels, unit cell edges, chemical formula overlay
 
@@ -91,6 +91,20 @@ pip install mofforge[chem]    # SMILES conversion (RDKit)
 pip install mofforge[mcp]     # MCP server for AI agents
 pip install mofforge[all]     # everything above
 ```
+
+The MCP server exposes its full catalog by default. Restrict it to an explicit
+startup-time allowlist, or hide tools backed by unavailable optional
+dependencies:
+
+```bash
+mofforge-mcp --tools mofforge_search,mofforge_validate
+mofforge-mcp --available-tools-only
+MOFFORGE_MCP_TOOLS=mofforge_search,mofforge_validate mofforge-mcp
+```
+
+Explicit tool names are strict: unknown names, or requested tools whose optional
+dependency is unavailable, stop the server with an error. Tool filtering occurs
+before registration, so excluded tools are neither advertised nor callable.
 
 For development:
 
