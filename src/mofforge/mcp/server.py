@@ -1231,7 +1231,7 @@ mcp = build_server()
 
 
 def main():
-    """Run the mofforge MCP server (stdio transport)."""
+    """Run the mofforge MCP server (stdio transport by default)."""
     import argparse
 
     parser = argparse.ArgumentParser(description="mofforge MCP server")
@@ -1242,10 +1242,15 @@ def main():
         help="MCP transport mode (default: stdio).",
     )
     parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host for HTTP transport (default: 127.0.0.1).",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=9010,
-        help="HTTP port (only for streamable-http transport).",
+        help="HTTP port (only for streamable_http transport).",
     )
     parser.add_argument(
         "--tools",
@@ -1275,7 +1280,12 @@ def main():
     if args.transport == "stdio":
         selected_server.run(transport="stdio")
     else:
+        # FastMCP's transport enum expects the dash form; normalize.
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+        mcp.run(transport="streamable-http")
         selected_server.run(transport="streamable-http")
+
 
 
 if __name__ == "__main__":
