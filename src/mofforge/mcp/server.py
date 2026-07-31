@@ -1237,7 +1237,7 @@ def main():
     parser = argparse.ArgumentParser(description="mofforge MCP server")
     parser.add_argument(
         "--transport",
-        choices=["stdio", "streamable-http"],
+        choices=["stdio", "streamable_http"],
         default="stdio",
         help="MCP transport mode (default: stdio).",
     )
