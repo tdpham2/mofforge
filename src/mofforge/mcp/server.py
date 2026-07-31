@@ -904,18 +904,13 @@ def mofforge_list_adsorbates() -> str:
 
 
 def main():
-    """Run the mofforge MCP server (stdio transport by default).
-
-    ``--transport`` accepts both ``streamable-http`` (mofforge legacy) and
-    ``streamable_http`` (ChemGraph/swarm supervisor convention) so this
-    binary works under either launcher.
-    """
+    """Run the mofforge MCP server (stdio transport by default)."""
     import argparse
 
     parser = argparse.ArgumentParser(description="mofforge MCP server")
     parser.add_argument(
         "--transport",
-        choices=["stdio", "streamable-http", "streamable_http"],
+        choices=["stdio", "streamable_http"],
         default="stdio",
         help="MCP transport mode (default: stdio).",
     )
@@ -928,7 +923,7 @@ def main():
         "--port",
         type=int,
         default=9010,
-        help="HTTP port (only for streamable-http transport).",
+        help="HTTP port (only for streamable_http transport).",
     )
     args = parser.parse_args()
 
