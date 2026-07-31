@@ -234,7 +234,7 @@ class Pipeline:
 
             child = (Pipeline.build_mof(
                         backend="tobacco", topology="pcu",
-                        tobacco_path="/path/to/tobacco_3.0")
+                        nodes=["4c_1Zn_Ch.cif"], edges=["ntn_edge.cif"])
                 .replace(query="BDC.xyz", replacement="NH2-BDC.xyz")
                 .validate()
                 .build(name="functionalized_pcu_MOF"))

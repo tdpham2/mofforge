@@ -65,6 +65,21 @@ stdio config (OpenCode / Claude / `langchain-mcp-adapters` style):
 
 For an HTTP transport instead: `mofforge-mcp --transport streamable-http --port 9010`.
 
+### Select exposed tools
+
+The stock server exposes all 23 tools by default. Use a strict allowlist when an
+agent should receive only a smaller catalog:
+
+```bash
+mofforge-mcp --tools mofforge_search_coremof,mofforge_get_structure,mofforge_validate
+```
+
+The same value can be supplied through `MOFFORGE_MCP_TOOLS`, which is convenient
+in an MCP client's `env` configuration. Use `--available-tools-only` to omit
+rendering, functionalization, or construction tools when their `vis`, `chem`, or
+`build` dependencies are not installed. An explicitly requested unavailable
+tool is treated as a startup configuration error.
+
 In ChemGraph, load these as LangChain tools with `langchain-mcp-adapters`'
 `MultiServerMCPClient` and bind them to your agent the same way ChemGraph loads
 its own MCP servers (see ChemGraph `docs/mcp_servers.md`).
@@ -95,17 +110,22 @@ pip install "chemgraph @ git+https://github.com/argonne-lcf/ChemGraph.git@dev-gl
 
 `CGFastMCP` also registers job-management tools (`check_job_status`,
 `get_job_results`, `list_jobs`, `cancel_job`, `check_endpoint_status`) when the
-backend is initialized.
+backend is initialized. These names participate in the same strict
+`MOFFORGE_MCP_TOOLS` allowlist as the mofforge-prefixed tools.
 
 ### Launch
 
 ```bash
 mofforge-mcp-chemgraph                      # stdio (default), port 9011 for HTTP
+MOFFORGE_MCP_TOOLS=mofforge_validate,mofforge_screen_coremof \
+  mofforge-mcp-chemgraph                    # filtered catalog
 ```
 
 `main()` wraps `init_backend()` / `run_mcp_server()` / `shutdown_backend()` just
 like ChemGraph's own `*_mcp_hpc.py` servers. The job tracker persists to
 `$MOFFORGE_MCP_JOBS_FILE` (default `~/.mofforge_mcp_jobs.json`).
+Set `MOFFORGE_MCP_AVAILABLE_ONLY=1` to omit tools backed by unavailable optional
+dependencies in this entry point.
 
 > When tools run on compute nodes, the configured data paths
 > (`MOFFORGE_COREMOF_*`) must be reachable from those nodes, or staged via a

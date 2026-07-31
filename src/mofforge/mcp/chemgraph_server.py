@@ -27,16 +27,42 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
 from mofforge.mcp import _impl
+from mofforge.mcp.tool_selection import parse_tool_list, select_tool_names
 
 logger = logging.getLogger("mofforge.mcp.chemgraph")
 
 # Resource hints for backend tasks. Conservative defaults; override per site.
 _BUILD_TASK = {"num_nodes": 1, "processes_per_node": 1}
 _RENDER_TASK = {"num_nodes": 1, "processes_per_node": 1}
+
+_TOOL_REQUIREMENTS: dict[str, str | None] = {
+    "mofforge_search_coremof": None,
+    "mofforge_screen_coremof": None,
+    "mofforge_search_csd": None,
+    "mofforge_lookup_mof": None,
+    "mofforge_get_structure": None,
+    "mofforge_list_adsorbates": None,
+    "mofforge_validate": None,
+    "mofforge_list_fragments": None,
+    "mofforge_get_fragment": None,
+    "mofforge_list_functional_groups": None,
+    "mofforge_find_sites": "chem",
+    "mofforge_functionalize": "chem",
+    "mofforge_functionalize_campaign": "chem",
+    "mofforge_build": "build",
+    "mofforge_render": "vis",
+    "mofforge_screen_and_place": None,
+    "check_job_status": None,
+    "get_job_results": None,
+    "list_jobs": None,
+    "cancel_job": None,
+    "check_endpoint_status": None,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +101,41 @@ def _screen_place_worker(item: dict[str, Any]) -> dict[str, Any]:
     return {"coreid": coreid, "status": status, **placement}
 
 
-def build_server():
+def _server_instructions(enabled_names: Collection[str]) -> str:
+    """Build ChemGraph instructions that match the selected catalog."""
+    enabled = set(enabled_names)
+    descriptions: list[str] = []
+    if enabled & {
+        "mofforge_search_coremof",
+        "mofforge_screen_coremof",
+        "mofforge_search_csd",
+        "mofforge_lookup_mof",
+        "mofforge_get_structure",
+    }:
+        descriptions.append("database discovery")
+    if "mofforge_validate" in enabled:
+        descriptions.append("structure validation")
+    if "mofforge_build" in enabled:
+        descriptions.append("backend MOF construction")
+    if "mofforge_render" in enabled:
+        descriptions.append("backend rendering")
+    if "mofforge_functionalize" in enabled:
+        descriptions.append("backend linker functionalization")
+    if "mofforge_screen_and_place" in enabled:
+        descriptions.append("screen-and-place ensemble fan-out")
+    summary = ", ".join(descriptions) if descriptions else "the configured tool set"
+    return (
+        "mofforge MOF tools with HPC backend execution. Exposed capabilities: "
+        + summary
+        + ". Lightweight database operations run inline; selected heavy and "
+        "ensemble tools are submitted to the configured execution backend."
+    )
+
+
+def build_server(
+    enabled_tools: Collection[str] | None = None,
+    available_only: bool = False,
+):
     """Construct and return the ``CGFastMCP`` server instance.
 
     Raises
@@ -92,21 +152,42 @@ def build_server():
             "server 'mofforge-mcp' instead."
         ) from exc
 
-    mcp = CGFastMCP(
-        name="mofforge HPC Tools",
-        instructions=(
-            "mofforge MOF tools with HPC backend execution. Lightweight "
-            "database search/screening, structure lookup, and validation run "
-            "inline; MOF construction, rendering, and the screen+place "
-            "ensemble are submitted to the execution backend with job "
-            "tracking. Typical flow: screen the CoRE MOF database by pore size "
-            "/ stability, then fan out structure retrieval + adsorbate "
-            "placement across all candidates for downstream gRASPA/ASE runs."
-        ),
+    selected = select_tool_names(
+        _TOOL_REQUIREMENTS,
+        _TOOL_REQUIREMENTS,
+        requested=enabled_tools,
+        available_only=available_only,
     )
 
+    class SelectedCGFastMCP(CGFastMCP):
+        """CGFastMCP variant that registers only this process's selected names."""
+
+        def add_tool(self, fn, name=None, **kwargs):
+            if (name or fn.__name__) not in selected:
+                return None
+            return super().add_tool(fn, name=name, **kwargs)
+
+    mcp = SelectedCGFastMCP(
+        name="mofforge HPC Tools",
+        instructions=_server_instructions(selected),
+    )
+
+    def selected_tool(**kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register a normal CGFastMCP tool only when selected."""
+        if kwargs["name"] in selected:
+            return mcp.tool(**kwargs)
+        return lambda function: function
+
+    def selected_fanout_tool(
+        **kwargs: Any,
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Register a CGFastMCP fan-out tool only when selected."""
+        if kwargs["name"] in selected:
+            return mcp.schema_fanout_tool(**kwargs)
+        return lambda function: function
+
     # ---- Inline (lightweight) tools ------------------------------------- #
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_search_coremof",
         description="Search the CoRE MOF database (coreid/refcode/name/metal/topology).",
     )
@@ -117,7 +198,7 @@ def build_server():
             query, field=field, limit=limit, data_path=data_path
         )
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_screen_coremof",
         description="Screen CoRE MOFs by pore size, density, stability, metal, topology, OMS.",
     )
@@ -154,7 +235,7 @@ def build_server():
             data_path=data_path,
         )
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_search_csd",
         description="Search the CSD lookup table (refcode/name/doi/formula/ccdc).",
     )
@@ -163,7 +244,7 @@ def build_server():
     ) -> dict:
         return _impl.search_csd_impl(query, field=field, limit=limit, data_path=data_path)
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_lookup_mof",
         description="Bridge a MOF name from CSD to simulation-ready CoRE MOF entries.",
     )
@@ -180,21 +261,21 @@ def build_server():
             coremof_data_path=coremof_data_path,
         )
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_get_structure",
         description="Resolve a CoRE MOF coreid/refcode to a local CIF file path.",
     )
     def mofforge_get_structure(identifier: str, structures_dir: str | None = None) -> dict:
         return _impl.get_structure_impl(identifier, structures_dir=structures_dir)
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_list_adsorbates",
         description="List the built-in adsorbate molecules available for placement.",
     )
     def mofforge_list_adsorbates() -> dict:
         return _impl.list_adsorbates_impl()
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_validate",
         description="Validate a crystal structure for clashes, bonds, and coordination.",
     )
@@ -211,8 +292,98 @@ def build_server():
             check_coordination=check_coordination,
         )
 
+    @selected_tool(
+        name="mofforge_list_fragments",
+        description="List packaged moiety fragment XYZ files bundled with mofforge.",
+    )
+    def mofforge_list_fragments() -> dict:
+        return _impl.list_fragments_impl()
+
+    @selected_tool(
+        name="mofforge_get_fragment",
+        description="Resolve a packaged moiety fragment name to an absolute XYZ path.",
+    )
+    def mofforge_get_fragment(name: str) -> dict:
+        return _impl.get_fragment_impl(name)
+
+    @selected_tool(
+        name="mofforge_list_functional_groups",
+        description="List curated functional groups for linker functionalization.",
+    )
+    def mofforge_list_functional_groups() -> dict:
+        return _impl.list_functional_groups_impl()
+
+    @selected_tool(
+        name="mofforge_find_sites",
+        description=(
+            "Enumerate functionalizable aromatic C-H sites on a linker SMILES; "
+            "each has an 'index' to select and a 'symmetry_class'."
+        ),
+    )
+    def mofforge_find_sites(linker_smiles: str) -> dict:
+        return _impl.find_sites_impl(linker_smiles)
+
     # ---- Backend (heavy) tools ----------------------------------------- #
-    @mcp.tool(
+    @selected_tool(
+        name="mofforge_functionalize",
+        description=(
+            "Functionalize a MOF linker with a chosen group at chosen site(s); "
+            "geometry generated automatically, coverage sets concentration."
+        ),
+        **_BUILD_TASK,
+    )
+    def mofforge_functionalize(
+        parent_cif: str,
+        linker_smiles: str,
+        group: str,
+        sites: list[int] | None = None,
+        coverage: float = 1.0,
+        output_cif: str = "functionalized.cif",
+        validate: bool = True,
+        random_seed: int | None = None,
+    ) -> dict:
+        return _impl.functionalize_impl(
+            parent_cif,
+            linker_smiles,
+            group,
+            sites=sites if sites is not None else 0,
+            coverage=coverage,
+            output_cif=output_cif,
+            validate=validate,
+            random_seed=random_seed,
+        )
+
+    @selected_tool(
+        name="mofforge_functionalize_campaign",
+        description=(
+            "Sweep functional groups x coverages on a linker, validate each, "
+            "and return results ranked best-first (valid, then fewest clashes)."
+        ),
+        **_BUILD_TASK,
+    )
+    def mofforge_functionalize_campaign(
+        parent_cif: str,
+        linker_smiles: str,
+        groups: list[str],
+        coverages: list[float] | None = None,
+        sites: list[int] | None = None,
+        output_dir: str = "functionalization_campaign",
+        validate: bool = True,
+        random_seed: int | None = None,
+    ) -> dict:
+        return _impl.functionalize_campaign_impl(
+            parent_cif,
+            linker_smiles,
+            groups,
+            coverages=coverages,
+            sites=sites if sites is not None else 0,
+            output_dir=output_dir,
+            validate=validate,
+            random_seed=random_seed,
+        )
+
+    # ---- Backend (heavy) tools ----------------------------------------- #
+    @selected_tool(
         name="mofforge_build",
         description="Build a MOF from a topology and building blocks (TOBACCO/pormake).",
         **_BUILD_TASK,
@@ -232,7 +403,7 @@ def build_server():
             output_dir=output_dir,
         )
 
-    @mcp.tool(
+    @selected_tool(
         name="mofforge_render",
         description="Render a crystal structure file (CIF/XYZ) to a PNG image.",
         **_RENDER_TASK,
@@ -257,7 +428,7 @@ def build_server():
         )
 
     # ---- Ensemble fan-out: screen -> (per hit) get_structure + place ---- #
-    @mcp.schema_fanout_tool(
+    @selected_fanout_tool(
         name="mofforge_screen_and_place",
         description=(
             "Screen the CoRE MOF database by property ranges, then for each "
@@ -313,7 +484,11 @@ def main() -> None:
     """Launch the mofforge CGFastMCP server with backend lifecycle management."""
     from chemgraph.mcp.server_utils import run_mcp_server
 
-    mcp = build_server()
+    mcp = build_server(
+        enabled_tools=parse_tool_list(os.environ.get("MOFFORGE_MCP_TOOLS")),
+        available_only=os.environ.get("MOFFORGE_MCP_AVAILABLE_ONLY", "").lower()
+        in {"1", "true", "yes", "on"},
+    )
 
     jobs_file = os.environ.get(
         "MOFFORGE_MCP_JOBS_FILE", str(Path.home() / ".mofforge_mcp_jobs.json")

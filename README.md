@@ -48,7 +48,7 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 ### Visualization & AI Integration
 
 - Structure rendering to PNG via 3Dmol.js + Playwright (ball-stick, stick, sphere representations)
-- MCP (Model Context Protocol) server exposing 17 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
+- MCP (Model Context Protocol) server exposing 23 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
 - Optional [ChemGraph](https://github.com/argonne-lcf/ChemGraph) integration -- an HPC-aware `CGFastMCP` server for backend execution and ensemble fan-out (see [docs/chemgraph.md](docs/chemgraph.md))
 - Atom labels, unit cell edges, chemical formula overlay
 
@@ -92,6 +92,20 @@ pip install mofforge[mcp]     # MCP server for AI agents
 pip install mofforge[all]     # everything above
 ```
 
+The MCP server exposes its full catalog by default. Restrict it to an explicit
+startup-time allowlist, or hide tools backed by unavailable optional
+dependencies:
+
+```bash
+mofforge-mcp --tools mofforge_search,mofforge_validate
+mofforge-mcp --available-tools-only
+MOFFORGE_MCP_TOOLS=mofforge_search,mofforge_validate mofforge-mcp
+```
+
+Explicit tool names are strict: unknown names, or requested tools whose optional
+dependency is unavailable, stop the server with an error. Tool filtering occurs
+before registration, so excluded tools are neither advertised nor callable.
+
 For development:
 
 ```bash
@@ -121,8 +135,32 @@ pip install -e ".[dev]"
 
 **External (not pip-installable):**
 
-- [TOBACCO 3.0](https://github.com/tobacco-mof/tobacco_3.0) -- must be cloned separately and configured via `mofforge.toml` or the `MOFFORGE_TOBACCO_PATH` environment variable
+- [TOBACCO 3.0](https://github.com/tdpham2/tobacco_3.0) -- installed automatically as a dependency (code only)
 - [Architector](https://github.com/lanl/Architector) -- used for molecule visualization (future: general inorganic complex construction)
+
+**TOBACCO data (topologies + building blocks):**
+
+The `tobacco3` package ships code only. mofforge resolves its topology and
+building-block CIFs in this order:
+
+1. An explicit directory set via `MOFFORGE_TOBACCO_DATA` (or `data_dir` in
+   `mofforge.toml`) containing `template_database/`, `nodes_database/`,
+   `edges_database/`.
+2. Auto-detection next to the installed `tobacco3` package.
+3. A **one-time download** of a pinned data tarball from
+   [`tdpham2/tobacco_3.0`](https://github.com/tdpham2/tobacco_3.0), cached under
+   `~/.cache/mofforge/tobacco-data` (repo/tag overridable via
+   `MOFFORGE_TOBACCO_DATA_REPO` / `MOFFORGE_TOBACCO_DATA_TAG`).
+
+So a fresh install needs no manual data setup -- the first build fetches ~27 MB
+and caches it. This data is **GPLv3** (ToBaCCo, © 2019 Ryther Anderson); mofforge
+only fetches and uses it at runtime (aggregation), so mofforge itself remains MIT.
+
+**Custom building blocks:** you are not limited to the bundled catalog. Any
+`node_files` / `edge_files` entry that is a path to a CIF on disk is used
+directly, so you can mix your own building blocks with catalog names, e.g.
+`node_files=["/abs/path/my_node.cif"], edge_files=["2B_4H_Ch.cif"]`. Custom CIFs
+must follow TOBACCO's connection-point convention.
 
 ## Quick Start
 

@@ -5,34 +5,53 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Callable, Collection
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from mofforge.mcp.tool_selection import (
+    ToolSelectionError,
+    parse_tool_list,
+    select_tool_names,
+)
+
 logger = logging.getLogger("mofforge.mcp")
 
-mcp = FastMCP(
-    name="mofforge",
-    instructions=(
-        "mofforge tools for building and modifying atomistic crystal structure "
-        "models, especially Metal-Organic Frameworks (MOFs).  Capabilities "
-        "include substructure search (VF2 graph isomorphism), find-and-replace "
-        "of molecular fragments, MOF construction from topology + building "
-        "blocks, structure validation, SMARTS-like pattern matching, "
-        "structure rendering to PNG images for visual inspection, CoRE MOF / "
-        "CSD database search and screening, structure-file retrieval, and "
-        "adsorbate placement.\n\n"
-        "General guidance:\n"
-        "- File paths should be absolute.\n"
-        "- Crystal structures are read from CIF files.\n"
-        "- Fragments are read from XYZ files with optional '!' anchor tags.\n"
-        "- Distances are in Angstroms.\n"
-        "- Typical screening workflow: mofforge_screen_coremof to find "
-        "candidate MOFs by pore size / stability, mofforge_get_structure to "
-        "fetch a CIF, then mofforge_place_adsorbate before a simulation.\n"
-        "- Call mofforge_validate after modifications to check for issues."
-    ),
-)
+
+@dataclass(frozen=True)
+class _ToolRegistration:
+    name: str
+    description: str
+    function: Callable[..., Any]
+    capability: str | None = None
+
+
+_TOOL_REGISTRY: list[_ToolRegistration] = []
+
+
+def _tool(
+    *,
+    name: str,
+    description: str,
+    capability: str | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Collect tool metadata without binding it to a server yet."""
+
+    def decorator(function: Callable[..., Any]) -> Callable[..., Any]:
+        _TOOL_REGISTRY.append(
+            _ToolRegistration(
+                name=name,
+                description=description,
+                function=function,
+                capability=capability,
+            )
+        )
+        return function
+
+    return decorator
 
 
 
@@ -66,7 +85,7 @@ def _load_fragment(xyz_path: str):
 
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_search",
     description=(
         "Search for a molecular substructure pattern within a crystal "
@@ -110,7 +129,7 @@ def mofforge_search(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_replace",
     description=(
         "Find a molecular pattern in a crystal and replace it with a "
@@ -191,7 +210,7 @@ def mofforge_replace(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_remove",
     description=(
         "Remove guest molecules from a crystal structure.  Uses "
@@ -239,7 +258,7 @@ def mofforge_remove(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_desolvate",
     description=(
         "Automatically identify and remove all uncoordinated solvent/guest "
@@ -301,7 +320,7 @@ def mofforge_desolvate(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_validate",
     description=(
         "Validate a crystal structure for steric clashes, unusual bond "
@@ -351,13 +370,14 @@ def mofforge_validate(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_render",
     description=(
         "Render a crystal structure file (CIF or XYZ) to a labelled PNG "
         "image.  Useful for visual inspection and vision-LLM analysis.  "
         "Supports unit cell rendering for periodic structures."
     ),
+    capability="vis",
 )
 def mofforge_render(
     input_file: str,
@@ -409,7 +429,7 @@ def mofforge_render(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_smarts_search",
     description=(
         "Search for a SMARTS-like pattern string in a crystal structure.  "
@@ -448,13 +468,14 @@ def mofforge_smarts_search(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_build",
     description=(
         "Build a MOF structure from a topology and building blocks using "
         "TOBACCO or Pormake backends.  Node and edge building blocks are "
         "specified as file paths."
     ),
+    capability="build",
 )
 def mofforge_build(
     topology: str,
@@ -521,9 +542,10 @@ def mofforge_build(
     return json.dumps(response, indent=2)
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_list_topologies",
     description="List available topology templates for MOF construction.",
+    capability="build",
 )
 def mofforge_list_topologies(
     backend: str = "tobacco",
@@ -559,9 +581,10 @@ def mofforge_list_topologies(
         )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_list_building_blocks",
     description=("List available building blocks (nodes or edges) for MOF construction."),
+    capability="build",
 )
 def mofforge_list_building_blocks(
     block_type: str = "nodes",
@@ -615,7 +638,7 @@ def mofforge_list_building_blocks(
 
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_search_coremof",
     description=(
         "Search the CoRE MOF database of simulation-ready MOF structures.  "
@@ -651,7 +674,7 @@ def mofforge_search_coremof(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_screen_coremof",
     description=(
         "Screen the CoRE MOF database by property ranges and filters, e.g. "
@@ -736,7 +759,7 @@ def mofforge_screen_coremof(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_search_csd",
     description=(
         "Search the Cambridge Structural Database (CSD) lookup table.  "
@@ -770,7 +793,7 @@ def mofforge_search_csd(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_lookup_mof",
     description=(
         "Look up a MOF by name in the CSD and return the corresponding "
@@ -809,7 +832,7 @@ def mofforge_lookup_mof(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_get_structure",
     description=(
         "Resolve a CoRE MOF coreid or refcode to a local CIF structure file "
@@ -840,7 +863,7 @@ def mofforge_get_structure(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_place_adsorbate",
     description=(
         "Place one or more adsorbate molecules (e.g. CO2, H2, CH4, N2, H2O) "
@@ -892,7 +915,7 @@ def mofforge_place_adsorbate(
     )
 
 
-@mcp.tool(
+@_tool(
     name="mofforge_list_adsorbates",
     description="List the built-in adsorbate molecules available for placement.",
 )
@@ -901,6 +924,310 @@ def mofforge_list_adsorbates() -> str:
     from mofforge.mcp._impl import list_adsorbates_impl
 
     return json.dumps(list_adsorbates_impl(), indent=2)
+
+
+@_tool(
+    name="mofforge_list_fragments",
+    description=(
+        "List the packaged moiety (fragment) XYZ files bundled with mofforge, "
+        "usable as query/replacement patterns for mofforge_replace."
+    ),
+)
+def mofforge_list_fragments() -> str:
+    """List packaged moiety fragment files."""
+    from mofforge.mcp._impl import list_fragments_impl
+
+    return json.dumps(list_fragments_impl(), indent=2)
+
+
+@_tool(
+    name="mofforge_get_fragment",
+    description=(
+        "Resolve a packaged moiety fragment name (from mofforge_list_fragments) "
+        "to an absolute XYZ file path for use with mofforge_replace."
+    ),
+)
+def mofforge_get_fragment(name: str) -> str:
+    """Resolve a packaged moiety name to its file path.
+
+    Parameters
+    ----------
+    name : str
+        Fragment file name, e.g. '2-nitro-p-phenylene.xyz'.
+    """
+    from mofforge.mcp._impl import get_fragment_impl
+
+    return json.dumps(get_fragment_impl(name), indent=2)
+
+
+@_tool(
+    name="mofforge_list_functional_groups",
+    description=(
+        "List the curated functional groups available for linker "
+        "functionalization (e.g. NH2, NO2, F, CH3, COOH).  The agent picks a "
+        "group name from this menu; it never authors SMILES or geometry."
+    ),
+)
+def mofforge_list_functional_groups() -> str:
+    """List curated functional groups for linker functionalization."""
+    from mofforge.mcp._impl import list_functional_groups_impl
+
+    return json.dumps(list_functional_groups_impl(), indent=2)
+
+
+@_tool(
+    name="mofforge_find_sites",
+    description=(
+        "Given a linker SMILES (e.g. from MOFid), enumerate the functionalizable "
+        "aromatic C-H positions.  Each site has a stable integer 'index' the "
+        "agent selects, and a 'symmetry_class': equal classes are chemically "
+        "equivalent positions, distinct classes are different environments.  "
+        "Metal-binding groups carry no aromatic H and are never returned."
+    ),
+    capability="chem",
+)
+def mofforge_find_sites(linker_smiles: str) -> str:
+    """Find functionalizable sites on a linker.
+
+    Parameters
+    ----------
+    linker_smiles : str
+        SMILES string of the linker to analyze.
+    """
+    from mofforge.mcp._impl import find_sites_impl
+
+    return json.dumps(find_sites_impl(linker_smiles), indent=2)
+
+
+@_tool(
+    name="mofforge_functionalize",
+    description=(
+        "Functionalize a MOF linker with a chosen group at chosen site(s).  "
+        "Generates the geometry automatically (RDKit) from the linker SMILES, "
+        "then finds and replaces the linker in the framework.  'coverage' "
+        "(0-1) sets the fraction of linkers to functionalize (concentration).  "
+        "Multiple site indices produce a multi-substitution pattern."
+    ),
+    capability="chem",
+)
+def mofforge_functionalize(
+    parent_cif: str,
+    linker_smiles: str,
+    group: str,
+    sites: list[int] | None = None,
+    coverage: float = 1.0,
+    output_cif: str = "functionalized.cif",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> str:
+    """Functionalize a MOF linker.
+
+    Parameters
+    ----------
+    parent_cif : str
+        Absolute path to the MOF CIF to functionalize.
+    linker_smiles : str
+        SMILES of the linker being modified (e.g. from MOFid).
+    group : str
+        Functional-group name from mofforge_list_functional_groups.
+    sites : list[int] | None
+        Site indices (from mofforge_find_sites) to functionalize on each linker.
+        Defaults to [0].  Multiple indices = multi-substitution pattern.
+    coverage : float
+        Fraction (0-1) of matched linkers to functionalize (1.0 = all).
+    output_cif : str
+        Output CIF file path.
+    validate : bool
+        Validate the resulting structure.
+    random_seed : int | None
+        Seed for reproducible location selection when coverage < 1.
+    """
+    from mofforge.mcp._impl import functionalize_impl
+
+    return json.dumps(
+        functionalize_impl(
+            parent_cif,
+            linker_smiles,
+            group,
+            sites=sites if sites is not None else 0,
+            coverage=coverage,
+            output_cif=output_cif,
+            validate=validate,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
+
+
+@_tool(
+    name="mofforge_functionalize_campaign",
+    description=(
+        "Run a full functionalization campaign: sweep multiple functional "
+        "groups x coverages on a linker, validate each result, and return them "
+        "ranked best-first (valid structures first, then fewest steric "
+        "clashes).  The primary tool for autonomous functionalization."
+    ),
+    capability="chem",
+)
+def mofforge_functionalize_campaign(
+    parent_cif: str,
+    linker_smiles: str,
+    groups: list[str],
+    coverages: list[float] | None = None,
+    sites: list[int] | None = None,
+    output_dir: str = "functionalization_campaign",
+    validate: bool = True,
+    random_seed: int | None = None,
+) -> str:
+    """Sweep groups x coverages and rank the functionalized structures.
+
+    Parameters
+    ----------
+    parent_cif : str
+        Absolute path to the MOF CIF to functionalize.
+    linker_smiles : str
+        SMILES of the linker being modified.
+    groups : list[str]
+        Functional-group names to sweep (from mofforge_list_functional_groups).
+    coverages : list[float] | None
+        Coverage fractions to sweep (default [0.25, 0.5, 1.0]).
+    sites : list[int] | None
+        Site indices to functionalize (default [0]).
+    output_dir : str
+        Directory for the per-combination CIF outputs.
+    validate : bool
+        Validate each result (needed for meaningful ranking).
+    random_seed : int | None
+        Seed for reproducible location selection.
+    """
+    from mofforge.mcp._impl import functionalize_campaign_impl
+
+    return json.dumps(
+        functionalize_campaign_impl(
+            parent_cif,
+            linker_smiles,
+            groups,
+            coverages=coverages,
+            sites=sites if sites is not None else 0,
+            output_dir=output_dir,
+            validate=validate,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
+
+
+def _server_instructions(enabled_names: Collection[str]) -> str:
+    """Build instructions that only describe registered workflows."""
+    enabled = set(enabled_names)
+    capabilities: list[str] = []
+    if enabled & {
+        "mofforge_search",
+        "mofforge_replace",
+        "mofforge_remove",
+        "mofforge_desolvate",
+        "mofforge_smarts_search",
+    }:
+        capabilities.append("crystal substructure search and editing")
+    if enabled & {
+        "mofforge_search_coremof",
+        "mofforge_screen_coremof",
+        "mofforge_search_csd",
+        "mofforge_lookup_mof",
+        "mofforge_get_structure",
+    }:
+        capabilities.append("CoRE MOF and CSD discovery")
+    if enabled & {
+        "mofforge_build",
+        "mofforge_list_topologies",
+        "mofforge_list_building_blocks",
+    }:
+        capabilities.append("MOF construction")
+    if "mofforge_render" in enabled:
+        capabilities.append("PNG rendering")
+    if enabled & {
+        "mofforge_find_sites",
+        "mofforge_functionalize",
+        "mofforge_functionalize_campaign",
+    }:
+        capabilities.append("linker functionalization")
+    if enabled & {"mofforge_place_adsorbate", "mofforge_list_adsorbates"}:
+        capabilities.append("adsorbate placement")
+    if "mofforge_validate" in enabled:
+        capabilities.append("structure validation")
+
+    summary = ", ".join(capabilities) if capabilities else "the configured tool set"
+    guidance = [
+        "General guidance:",
+        "- File paths should be absolute.",
+        "- Crystal structures are read from CIF files.",
+        "- Fragments are read from XYZ files with optional '!' anchor tags.",
+        "- Distances are in Angstroms.",
+    ]
+    if {
+        "mofforge_screen_coremof",
+        "mofforge_get_structure",
+        "mofforge_place_adsorbate",
+    } <= enabled:
+        guidance.append(
+            "- Typical screening workflow: mofforge_screen_coremof, "
+            "mofforge_get_structure, then mofforge_place_adsorbate."
+        )
+    if {
+        "mofforge_find_sites",
+        "mofforge_list_functional_groups",
+        "mofforge_functionalize",
+    } <= enabled:
+        guidance.append(
+            "- Typical functionalization workflow: mofforge_find_sites, "
+            "mofforge_list_functional_groups, then mofforge_functionalize."
+        )
+    if "mofforge_validate" in enabled:
+        guidance.append("- Call mofforge_validate after modifications.")
+
+    return (
+        "mofforge tools for atomistic crystal structure models, especially "
+        f"Metal-Organic Frameworks (MOFs). Exposed capabilities: {summary}.\n\n"
+        + "\n".join(guidance)
+    )
+
+
+def build_server(
+    enabled_tools: Collection[str] | None = None,
+    available_only: bool = False,
+    *,
+    port: int = 9010,
+) -> FastMCP:
+    """Construct a stock FastMCP server with a startup-time tool selection."""
+    all_names = [registration.name for registration in _TOOL_REGISTRY]
+    requirements = {
+        registration.name: registration.capability
+        for registration in _TOOL_REGISTRY
+    }
+    selected = select_tool_names(
+        all_names,
+        requirements,
+        requested=enabled_tools,
+        available_only=available_only,
+    )
+    server = FastMCP(
+        name="mofforge",
+        instructions=_server_instructions(selected),
+        port=port,
+    )
+    for registration in _TOOL_REGISTRY:
+        if registration.name in selected:
+            server.add_tool(
+                registration.function,
+                name=registration.name,
+                description=registration.description,
+            )
+    return server
+
+
+# Backward-compatible import surface: callers that import ``server.mcp`` still
+# receive the historical full catalog.
+mcp = build_server()
 
 
 def main():
@@ -925,15 +1252,40 @@ def main():
         default=9010,
         help="HTTP port (only for streamable_http transport).",
     )
+    parser.add_argument(
+        "--tools",
+        default=os.environ.get("MOFFORGE_MCP_TOOLS"),
+        metavar="NAME[,NAME...]",
+        help=(
+            "Expose only these MCP tool names. The MOFFORGE_MCP_TOOLS "
+            "environment variable provides the same comma-separated value."
+        ),
+    )
+    parser.add_argument(
+        "--available-tools-only",
+        action="store_true",
+        help="Hide tools whose optional dependency group is unavailable.",
+    )
     args = parser.parse_args()
 
+    try:
+        selected_server = build_server(
+            enabled_tools=parse_tool_list(args.tools),
+            available_only=args.available_tools_only,
+            port=args.port,
+        )
+    except ToolSelectionError as exc:
+        parser.error(str(exc))
+
     if args.transport == "stdio":
-        mcp.run(transport="stdio")
+        selected_server.run(transport="stdio")
     else:
         # FastMCP's transport enum expects the dash form; normalize.
         mcp.settings.host = args.host
         mcp.settings.port = args.port
         mcp.run(transport="streamable-http")
+        selected_server.run(transport="streamable-http")
+
 
 
 if __name__ == "__main__":
