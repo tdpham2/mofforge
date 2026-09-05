@@ -16,14 +16,18 @@ def _setup_logging(verbose: bool) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     root_logger = logging.getLogger("mofforge")
     root_logger.setLevel(level)
-    # Avoid adding duplicate handlers on repeated calls (e.g. in tests)
+    for existing in list(root_logger.handlers):
+        if getattr(existing, "_mofforge_cli", False):
+            root_logger.removeHandler(existing)
+            existing.close()
     if not root_logger.handlers:
-        handler = logging.StreamHandler(sys.stderr)
+        handler = logging.StreamHandler(sys.__stderr__)
+        handler._mofforge_cli = True
         handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
         root_logger.addHandler(handler)
 
 
-def _load_parent(parent_path: str) -> "Crystal":  # noqa: F821
+def _load_parent(parent_path: str) -> Crystal:  # noqa: F821
     """Load a parent crystal from CIF and infer bonds."""
     from mofforge.core.bonding import infer_bonds
     from mofforge.core.crystal import Crystal
@@ -33,7 +37,7 @@ def _load_parent(parent_path: str) -> "Crystal":  # noqa: F821
     return xtal
 
 
-def _load_frag(filepath: str, fragment_path: str | None = None) -> "Crystal":  # noqa: F821
+def _load_frag(filepath: str, fragment_path: str | None = None) -> Crystal:  # noqa: F821
     """Load a fragment from an XYZ file, resolving the path."""
     from mofforge.core.moiety import fragment as load_fragment
 
@@ -81,11 +85,21 @@ def search(parent, query, disconnected, fragment_path, verbose):
 @click.option("-o", "--output", default="new_xtal.cif", help="Output CIF file path.")
 @click.option("--nb-loc", default=0, type=int, help="Number of random locations.")
 @click.option("--random", "use_random", is_flag=True, help="Use random orientations.")
+@click.option("--random-seed", type=int, default=None, help="Seed for reproducible replacement.")
 @click.option("--validate", "do_validate", is_flag=True, help="Validate output structure.")
 @click.option("--fragment-path", default=None, help="Directory containing fragment XYZ files.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
 def replace_cmd(
-    parent, query, replacement, output, nb_loc, use_random, do_validate, fragment_path, verbose
+    parent,
+    query,
+    replacement,
+    output,
+    nb_loc,
+    use_random,
+    do_validate,
+    fragment_path,
+    verbose,
+    random_seed,
 ):
     """Find and replace a pattern in a crystal."""
     _setup_logging(verbose)
@@ -102,7 +116,7 @@ def replace_cmd(
     result = find_pattern(q, xtal)
     click.echo(f"Found {result.nb_isomorphisms()} matches at {result.nb_locations()} locations")
 
-    kwargs = {"verbose": True}
+    kwargs = {"verbose": True, "random_seed": random_seed, "nb_loc": nb_loc}
     if nb_loc > 0:
         kwargs["nb_loc"] = nb_loc
     if use_random:
@@ -120,7 +134,12 @@ def replace_cmd(
 
         child = infer_bonds(child, periodic=True)
         report = validate_structure(child)
+        from mofforge.provenance import write_manifest
+
+        write_manifest(child, output, validation=report)
         click.echo(report.summary())
+        if not report.is_valid:
+            raise click.exceptions.Exit(1)
 
 
 @main.command("remove")
@@ -192,18 +211,22 @@ def desolvate_cmd(parent, output, min_atoms, keep_metals, n_frameworks, verbose)
 
 @main.command("validate")
 @click.argument("structure")
+@click.option("--json", "as_json", is_flag=True, help="Emit the structured validation report.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
-def validate_cmd(structure, verbose):
+def validate_cmd(structure, verbose, as_json):
     """Validate a crystal structure."""
     _setup_logging(verbose)
 
+    import json
+
+    from mofforge.core.crystal import Crystal
     from mofforge.validation import validate_structure
 
-    click.echo(f"Loading structure: {structure}")
-    xtal = _load_parent(structure)
-
+    xtal = Crystal.from_cif(structure)
     report = validate_structure(xtal)
-    click.echo(report.summary())
+    click.echo(json.dumps(report.to_dict()) if as_json else report.summary())
+    if not report.is_valid:
+        raise click.exceptions.Exit(1)
 
 
 @main.command("batch")
@@ -219,10 +242,18 @@ def batch_cmd(config_path, verbose):
 
     click.echo(f"\nBatch Results ({len(results)} structures):")
     for r in results:
-        status = "OK" if r.success else f"FAILED: {r.error}"
+        status = (
+            ("OK" if r.validation is None or r.validation.is_valid else "INVALID")
+            if r.success
+            else f"FAILED: {r.error}"
+        )
         click.echo(f"  {r.parent_name}: {status}")
         if r.output_path:
             click.echo(f"    -> {r.output_path}")
+    if not results or any(
+        not r.success or (r.validation is not None and not r.validation.is_valid) for r in results
+    ):
+        raise click.exceptions.Exit(1)
 
 
 @main.command("render")
@@ -507,7 +538,7 @@ def coremof_cmd(query, field, limit, data_path, bridge, verbose):
     """Search the CoRE MOF database for simulation-ready structures."""
     _setup_logging(verbose)
 
-    from mofforge.coremof import get_database, csd_to_coremof
+    from mofforge.coremof import csd_to_coremof, get_database
     from mofforge.utils.config import set_paths
 
     if data_path:
@@ -536,10 +567,7 @@ def coremof_cmd(query, field, limit, data_path, bridge, verbose):
     total = all_result.n_matches
     result = db.search(query, field=field, limit=limit)
 
-    click.echo(
-        f"CoreMOF lookup: {total} match(es) "
-        f"for '{query}' (field: {result.field})"
-    )
+    click.echo(f"CoreMOF lookup: {total} match(es) for '{query}' (field: {result.field})")
     if total > limit:
         click.echo(f"  (showing first {limit} of {total}; use -n {total} to see all)")
     for rec in result.records:
@@ -551,7 +579,9 @@ def coremof_cmd(query, field, limit, data_path, bridge, verbose):
 
 @main.command("lookup")
 @click.argument("name")
-@click.option("--limit", "-n", default=50, type=int, help="Max CSD results to display (default: 50).")
+@click.option(
+    "--limit", "-n", default=50, type=int, help="Max CSD results to display (default: 50)."
+)
 @click.option("--csd-data-path", default=None, help="Path to CSD TSV file.")
 @click.option("--coremof-data-path", default=None, help="Path to CoRE MOF CSV file.")
 @click.option("-v", "--verbose", is_flag=True, help="Show extended CoreMOF properties.")
@@ -564,8 +594,8 @@ def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
     """
     _setup_logging(verbose)
 
-    from mofforge.coremof import search_csd_name
     from mofforge.coremof import get_database as get_coremof_db
+    from mofforge.coremof import search_csd_name
     from mofforge.csd import get_database as get_csd_db
     from mofforge.utils.config import set_paths
 
@@ -576,7 +606,9 @@ def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
 
     try:
         csd_db = get_csd_db(data_path=csd_data_path) if csd_data_path else get_csd_db()
-        coremof_db = get_coremof_db(data_path=coremof_data_path) if coremof_data_path else get_coremof_db()
+        coremof_db = (
+            get_coremof_db(data_path=coremof_data_path) if coremof_data_path else get_coremof_db()
+        )
         # Run without limit to get total count
         all_results = search_csd_name(name, coremof_db=coremof_db, csd_db=csd_db)
     except FileNotFoundError as exc:
@@ -593,8 +625,7 @@ def lookup_cmd(name, limit, csd_data_path, coremof_data_path, verbose):
     )
     if total_csd > limit:
         click.echo(
-            f"  (showing first {limit} of {total_csd} CSD matches; "
-            f"use -n {total_csd} to see all)"
+            f"  (showing first {limit} of {total_csd} CSD matches; use -n {total_csd} to see all)"
         )
     click.echo()
 

@@ -148,6 +148,7 @@ def test_validate_impl(host_cif):
 def test_stock_server_registers_new_tools():
     import asyncio
 
+    pytest.importorskip("mcp")
     from mofforge.mcp import server
 
     tools = asyncio.run(server.mcp.list_tools())
@@ -165,6 +166,7 @@ def test_stock_server_registers_new_tools():
 
 
 def test_stock_server_tool_returns_json(coremof_csv):
+    pytest.importorskip("mcp")
     from mofforge.mcp import server
 
     raw = server.mofforge_screen_coremof(metal="Cu", data_path=str(coremof_csv))
@@ -186,6 +188,7 @@ def test_list_functional_groups_impl():
 
 
 def test_find_sites_impl():
+    pytest.importorskip("rdkit")
     out = _impl.find_sites_impl("O=C(O)c1ccc(C(=O)O)cc1")
     assert out["success"] is True
     assert out["n_sites"] == 4
@@ -240,6 +243,7 @@ def test_get_fragment_impl_unknown():
 def test_stock_server_registers_functionalization_tools():
     import asyncio
 
+    pytest.importorskip("mcp")
     from mofforge.mcp import server
 
     names = {t.name for t in asyncio.run(server.mcp.list_tools())}

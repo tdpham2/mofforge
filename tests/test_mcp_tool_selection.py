@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+
+pytest.importorskip("mcp")
 from mcp.server.fastmcp.exceptions import ToolError
 
 from mofforge.mcp import tool_selection
@@ -70,13 +72,21 @@ def test_parse_tool_list(raw, expected):
 
 
 def test_stock_cli_forwards_tool_selection(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
     from mofforge.mcp import server as server_module
 
     captured = {}
 
     class FakeServer:
+        def __init__(self):
+            self.settings = SimpleNamespace(host="127.0.0.1")
+
         def run(self, *, transport):
             captured["transport"] = transport
+            captured["host"] = self.settings.host
+            captured["runs"] = captured.get("runs", 0) + 1
 
     def fake_build_server(enabled_tools, available_only, *, port):
         captured.update(
@@ -86,13 +96,17 @@ def test_stock_cli_forwards_tool_selection(monkeypatch):
         )
         return FakeServer()
 
+    global_server = Mock()
+    monkeypatch.setattr(server_module, "mcp", global_server)
     monkeypatch.setattr(server_module, "build_server", fake_build_server)
     monkeypatch.setattr(
         "sys.argv",
         [
             "mofforge-mcp",
             "--transport",
-            "streamable-http",
+            "streamable_http",
+            "--host",
+            "0.0.0.0",
             "--port",
             "9123",
             "--tools",
@@ -108,7 +122,10 @@ def test_stock_cli_forwards_tool_selection(monkeypatch):
         "available_only": True,
         "port": 9123,
         "transport": "streamable-http",
+        "host": "0.0.0.0",
+        "runs": 1,
     }
+    global_server.run.assert_not_called()
 
 
 def test_chemgraph_server_registers_only_allowlisted_tools():
