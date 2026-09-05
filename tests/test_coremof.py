@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import csv
 import io
-import os
-from pathlib import Path
 
 import pytest
 
@@ -598,8 +596,8 @@ class TestCLI:
     def test_coremof_missing_config(self, monkeypatch):
         from click.testing import CliRunner
 
-        from mofforge.coremof import database as db_module
         from mofforge.cli import main
+        from mofforge.coremof import database as db_module
         from mofforge.utils.config import config
 
         monkeypatch.setattr(config, "coremof_data_path", None)

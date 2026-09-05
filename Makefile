@@ -1,22 +1,22 @@
 .PHONY: install test lint format check clean
 
 install:  ## Install for development
-	pip install -e ".[dev]"
+	uv sync --locked --extra dev
 
 test:  ## Run tests
-	pytest tests/ -v
+	uv run --no-sync pytest tests/ -v
 
 test-cov:  ## Run tests with coverage
-	pytest tests/ --cov=mofforge --cov-report=term-missing
+	uv run --no-sync pytest tests/ --cov=mofforge --cov-report=term-missing
 
 lint:  ## Run linter
-	ruff check src/ tests/
+	uv run --no-sync ruff check src/ tests/
 
 format:  ## Format code
-	ruff format src/ tests/
+	uv run --no-sync ruff format src/ tests/
 
 fix:  ## Auto-fix lint issues
-	ruff check src/ tests/ --fix
+	uv run --no-sync ruff check src/ tests/ --fix
 
 check: lint test  ## Run lint + tests
 

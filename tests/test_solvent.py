@@ -92,7 +92,7 @@ class TestRemoveSolvent:
         """Components with >= min_atoms should be kept."""
         from mofforge.solvent.removal import remove_solvent
 
-        solvated, n_framework = _make_solvated_crystal()
+        solvated, _n_framework = _make_solvated_crystal()
 
         # Water has 3 atoms; min_atoms=3 should keep them
         result = remove_solvent(solvated, min_atoms=3)
@@ -225,7 +225,6 @@ class TestPipelineDesolvate:
 
     def test_pipeline_desolvate(self):
         """Pipeline with desolvate step should work."""
-        from mofforge.core.bonding import infer_bonds
         from mofforge.pipeline import Pipeline
 
         solvated, n_framework = _make_solvated_crystal()

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mofforge"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build and modify atomistic crystal structure models, especially MOFs"
 readme = "README.md"
 license = {text = "MIT"}
@@ -49,7 +49,7 @@ build = [
     # cached under ~/.cache/mofforge/tobacco-data (see mofforge.build.config).
     # The data is GPLv3 (ToBaCCo, (c) 2019 Ryther Anderson); it is fetched and
     # used at runtime only, so mofforge itself remains MIT.
-    "tobacco3 @ git+https://github.com/tdpham2/tobacco_3.0.git",
+    "tobacco3 @ git+https://github.com/tdpham2/tobacco_3.0.git@effe43059cfd78015db616890a6d20c090633378",
 ]
 mcp = [
     "mcp[cli]>=1.16,<2",
@@ -79,6 +79,13 @@ mofforge-mcp-chemgraph = "mofforge.mcp.chemgraph_server:main"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src", "/tests", "/docs", "/examples", "/.github",
+    "/README.md", "/LICENSE", "/pyproject.toml", "/uv.lock", "/Makefile",
+    "/scripts/benchmark_adsorption.py",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mofforge"]
 artifacts = ["src/mofforge/data/moieties/*.xyz"]
@@ -86,6 +93,7 @@ artifacts = ["src/mofforge/data/moieties/*.xyz"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+markers = ["integration: real optional-backend or browser integration"]
 
 [tool.ruff]
 line-length = 100

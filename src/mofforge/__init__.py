@@ -5,7 +5,7 @@ try:
 
     __version__ = _get_version("mofforge")
 except Exception:
-    __version__ = "0.1.0"  # fallback for editable installs without metadata
+    __version__ = "0.2.0"  # fallback for editable installs without metadata
 
 from mofforge.adsorbate import (
     AdsorbatePlacement,
@@ -26,7 +26,7 @@ from mofforge.build import (
     Topology,
 )
 from mofforge.core.bonding import BondingRule, infer_bonds, remove_bonds
-from mofforge.core.crystal import Crystal
+from mofforge.core.crystal import Crystal, PeriodicBond
 from mofforge.core.moiety import (
     anchor_indices,
     fragment,
@@ -105,6 +105,7 @@ __all__ = [
     "FunctionalizationResult",
     "MOFBuilder",
     "MatchResult",
+    "PeriodicBond",
     "Pipeline",
     "Provenance",
     "RemovedMolecule",

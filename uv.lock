@@ -1377,7 +1377,7 @@ wheels = [
 
 [[package]]
 name = "mofforge"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -1440,7 +1440,7 @@ requires-dist = [
     { name = "rdkit", marker = "extra == 'chem'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scipy", specifier = ">=1.10" },
-    { name = "tobacco3", marker = "extra == 'build'", git = "https://github.com/tdpham2/tobacco_3.0.git" },
+    { name = "tobacco3", marker = "extra == 'build'", git = "https://github.com/tdpham2/tobacco_3.0.git?rev=effe43059cfd78015db616890a6d20c090633378" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.0" },
 ]
 provides-extras = ["vis", "chem", "build", "mcp", "chemgraph", "all", "dev"]
@@ -3077,7 +3077,7 @@ wheels = [
 [[package]]
 name = "tobacco3"
 version = "3.1.0"
-source = { git = "https://github.com/tdpham2/tobacco_3.0.git#effe43059cfd78015db616890a6d20c090633378" }
+source = { git = "https://github.com/tdpham2/tobacco_3.0.git?rev=effe43059cfd78015db616890a6d20c090633378#effe43059cfd78015db616890a6d20c090633378" }
 dependencies = [
     { name = "matplotlib" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },

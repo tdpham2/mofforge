@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
 from mofforge.csd.database import (
@@ -365,8 +362,8 @@ class TestCLI:
     def test_csd_command_missing_config(self, monkeypatch):
         from click.testing import CliRunner
 
-        from mofforge.csd import database as db_module
         from mofforge.cli import main
+        from mofforge.csd import database as db_module
         from mofforge.utils.config import config
 
         monkeypatch.setattr(config, "csd_data_path", None)
