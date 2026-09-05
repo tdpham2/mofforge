@@ -1,5 +1,7 @@
 # CoRE MOF Database Guide
 
+[Database lessons](../examples/databases/README.md) provides runnable workflows with bundled inputs and expected results.
+
 mofforge includes a module for searching the [CoRE MOF database](https://github.com/mtap-research/CoRE-MOF-Tools) — a curated dataset of ~10,000 computation-ready MOF structures with pre-computed properties. Given a CSD refcode, MOF name, metal type, topology, or property ranges, it returns matching CoRE MOF entries with their `coreid` identifiers for downstream simulation workflows.
 
 ## Data Source

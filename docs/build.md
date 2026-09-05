@@ -1,5 +1,7 @@
 # MOF Construction Guide
 
+[Construction lessons](../examples/build/README.md) provides runnable workflows with bundled inputs and expected results.
+
 Complete guide to building MOFs from topology templates and building blocks using mofforge.
 
 > **Early Development** -- The MOF construction subsystem is in alpha. The

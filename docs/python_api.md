@@ -1,5 +1,7 @@
 # Python API Manual
 
+[Examples cookbook](../examples/README.md) provides runnable workflows with bundled inputs and expected results.
+
 Complete guide to using mofforge as a Python library.
 
 ## Table of Contents
@@ -234,6 +236,9 @@ child = replace_pattern(match, replacement, random=True)
 child = replace_pattern(match, replacement, nb_loc=4, random=True)
 ```
 
+Explicit location and orientation indices are zero-based. `ori=[0]` selects the
+first mapping at its location; omit `ori` to choose the optimal alignment.
+
 ### Replacing with Nothing (Deletion)
 
 To delete matched substructures, pass `None` as the replacement:
@@ -466,7 +471,7 @@ parallel: 4
 moiety_path: ./data/moieties
 ```
 
-**Supported operation types:** `replace`, `remove`, `validate`.
+**Supported operation types:** `replace`, `remove`, `desolvate`, `validate`.
 
 ---
 

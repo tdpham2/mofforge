@@ -3,6 +3,7 @@ name: Reliability checks
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,7 +28,7 @@ jobs:
             extras: '--extra dev --extra mcp'
             name: mcp
           - python: '3.11'
-            extras: '--extra dev --extra build'
+            extras: '--extra dev --extra build --extra mcp'
             name: builders
     name: ${{ matrix.name }} (Python ${{ matrix.python }})
     steps:
@@ -40,10 +41,10 @@ jobs:
           version: '0.8.18'
           enable-cache: true
       - run: uv sync --locked --python '${{ matrix.python }}' ${{ matrix.extras }}
-      - run: uv run --no-sync ruff check src/ tests/
+      - run: uv run --no-sync ruff check src/ tests/ examples/
       - run: uv run --no-sync pytest tests/ --cov=mofforge --cov-report=term-missing --cov-report=xml
       - if: matrix.name == 'builders'
-        run: uv run --no-sync pytest tests/test_build_integration.py -v
+        run: uv run --no-sync pytest tests/test_build_integration.py tests/test_examples.py -m integration -v
         env:
           MOFFORGE_RUN_BUILD_TESTS: '1'
       - if: always()
@@ -51,6 +52,23 @@ jobs:
         with:
           name: coverage-${{ matrix.name }}
           path: coverage.xml
+
+  render-examples:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.18'
+      - run: uv sync --locked --extra dev --extra vis
+      - run: uv run --no-sync playwright install --with-deps chromium
+      - run: uv run --no-sync pytest tests/test_examples.py -k png_rendering -v
+        env:
+          MOFFORGE_RUN_RENDER_TESTS: '1'
 
   wheel:
     runs-on: ubuntu-latest

@@ -1,0 +1,5 @@
+"coreid","refcode","name","LCD (Å)","PLD (Å)","Density (g/cm3)","ASA (m2/g)","PV (cm3/g)","VF","topology(SingleNodes)","Metal Types","Has OMS","Thermal_stability (℃)","Water_stability","Solvent_stability","Extension","DOI","Year","Source"
+"2099[Zn][pcu]3[ASR]1","DEMOZN_ASR","Fictional zinc demo","12","5","0.6","1500","0.5","0.6","pcu","Zn","No","350","0.8","0.9","All Solvent Removed","10.0000/fictional-zinc","2099","Synthetic tutorial"
+"2099[Zn][pcu]3[FSR]1","DEMOZN_FSR","Fictional zinc demo","10","4","0.7","1200","0.4","0.5","pcu","Zn","No","340","0.75","0.85","Free Solvent Removed","10.0000/fictional-zinc","2099","Synthetic tutorial"
+"2099[Zr][fcu]3[ASR]1","DEMOZR_ASR","Fictional zirconium demo","unknown","unknown","1.2","unknown","unknown","unknown","fcu","Zr","No","unknown","unknown","unknown","All Solvent Removed","10.0000/fictional-zirconium","2099","Synthetic tutorial"
+"2099[Zn][pcu]3[ASR]2","DEMOMIS_ASR","Fictional missing structure","9","4.5","0.8","900","0.3","0.4","pcu","Zn","Yes","300","0.8","0.8","All Solvent Removed","10.0000/fictional-missing","2099","Synthetic tutorial"

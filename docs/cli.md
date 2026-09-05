@@ -1,5 +1,7 @@
 # CLI Reference
 
+[Examples cookbook and CLI recipes](../examples/README.md) provides runnable workflows with bundled inputs and expected results.
+
 mofforge provides a command-line interface for all core operations. After installation, the `mofforge` command is available.
 
 ```bash

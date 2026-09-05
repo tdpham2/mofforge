@@ -1,0 +1,5 @@
+[REFCODE]	[_chemical_name_common]	[_chemical_name_systematic]	[_chemical_formula_moiety]	[_journal_year]	[_ccdc_RMARKS]
+DEMOZN	Fictional zinc demo	Synthetic zinc entry	Zn C H O	2099	CCDC: CCDC 999991 DOI: 10.0000/fictional-zinc
+DEMOZR	Fictional zirconium demo	Synthetic zirconium entry	Zr C H O	2099	CCDC: CCDC 999992 DOI: 10.0000/fictional-zirconium
+DEMOMIS	Fictional missing structure	Synthetic missing entry	Zn C H O	2099	CCDC: CCDC 999993 DOI: 10.0000/fictional-missing
+DEMONONE	Fictional unmatched demo	Synthetic unmatched entry	Cu C H O	2099	CCDC: CCDC 999994 DOI: 10.0000/fictional-unmatched

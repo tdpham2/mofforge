@@ -1,5 +1,7 @@
 # CSD Lookup Guide
 
+[Database lessons](../examples/databases/README.md) provides runnable workflows with bundled inputs and expected results.
+
 mofforge includes a module for searching the Cambridge Structural Database (CSD) MOF subset. Given a MOF name, DOI, or CCDC deposition number, it returns the corresponding CSD REFcode(s) and associated metadata.
 
 ## Prerequisites

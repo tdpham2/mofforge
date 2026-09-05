@@ -1,106 +1,58 @@
 #!/usr/bin/env python3
-"""Structure Repair — Correct Missing Hydrogen Atoms
+"""Restore explicit aromatic hydrogens in IRMOF-1.
 
-Demonstrates repairing a crystal structure that has missing hydrogen atoms
-on its linkers — a common artifact of X-ray crystallography.
-
-The query represents the bare carbon ring (no H), and the replacement is
-the complete ring with H atoms properly positioned. This is a case where
-the replacement is a superset of the query (no '!' masking needed).
-
-Input files:
-    data/crystals/IRMOF-1_noH.cif           - Parent MOF with missing H atoms
-    data/moieties/1,4-C-phenylene_noH.xyz    - Query (bare phenylene, no H)
-    data/moieties/1,4-C-phenylene.xyz        - Replacement (phenylene with H)
-
-Usage:
-    python repair/structure_repair.py
-    python repair/structure_repair.py --output simulation_ready.cif
+Run this file directly; see the topic README for the scientific walkthrough.
 """
 
-import argparse
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
-
-SCRIPT_DIR = Path(__file__).parent
-EXAMPLES_DIR = SCRIPT_DIR.parent
-CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
-MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
-
-
-def run_correct_missing_h(output: str, fragment_path: str):
-    """Repair missing hydrogen atoms in IRMOF-1."""
-
-    # -------------------------------------------------------------------------
-    # Step 1: Load the corrupted parent (H atoms missing)
-    # -------------------------------------------------------------------------
-    print("Loading parent with missing H: IRMOF-1_noH.cif")
-    parent = Crystal.from_cif(CRYSTAL_DIR / "IRMOF-1_noH.cif")
-    parent = infer_bonds(parent, periodic=True)
-    print(f"  Atoms: {parent.n_atoms}")
-    print(f"  Bonds: {parent.n_bonds}")
-
-    # Count H atoms in the parent
-    h_count_before = sum(1 for s in parent.species if s == "H")
-    print(f"  Hydrogen atoms: {h_count_before}")
-
-    # -------------------------------------------------------------------------
-    # Step 2: Load query — the bare phenylene ring WITHOUT hydrogen atoms
-    #
-    # Note: no '!' tags are used here. The query is simply the fragment
-    # as it appears in the damaged structure.
-    # -------------------------------------------------------------------------
-    print(f"\nLoading query: 1,4-C-phenylene_noH.xyz")
-    query = fragment("1,4-C-phenylene_noH.xyz", fragment_path=fragment_path)
-    print(f"  Atoms: {query.n_atoms}, Species: {query.species}")
-
-    # -------------------------------------------------------------------------
-    # Step 3: Load replacement — the COMPLETE phenylene ring WITH hydrogens
-    #
-    # The replacement has more atoms than the query. The extra atoms (H)
-    # will be added to the parent structure at each matched location.
-    # -------------------------------------------------------------------------
-    print(f"\nLoading replacement: 1,4-C-phenylene.xyz")
-    replacement = fragment("1,4-C-phenylene.xyz", fragment_path=fragment_path)
-    print(f"  Atoms: {replacement.n_atoms}, Species: {replacement.species}")
-    print(f"  -> {replacement.n_atoms - query.n_atoms} extra atoms (H) will be added per location")
-
-    # -------------------------------------------------------------------------
-    # Step 4: Search and replace at ALL locations (default mode)
-    # -------------------------------------------------------------------------
-    print("\nSearching...")
-    search = find_pattern(query, parent)
-    print(f"  Found {search.nb_locations()} locations")
-
-    print("Replacing at all locations with optimal orientation...")
-    child = replace_pattern(
-        search,
-        replacement,
-        name="IRMOF-1_repaired",
-    )
-
-    h_count_after = sum(1 for s in child.species if s == "H")
-    print(f"\n  Parent atoms:  {parent.n_atoms} (H: {h_count_before})")
-    print(f"  Child atoms:   {child.n_atoms} (H: {h_count_after})")
-    print(f"  H atoms added: {h_count_after - h_count_before}")
-
-    # -------------------------------------------------------------------------
-    # Step 5: Write output
-    # -------------------------------------------------------------------------
-    child.write_cif(output)
-    print(f"\nOutput written to: {output}")
-
-    return child
+# Only cookbook helpers are added to the path; install mofforge separately.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _common import (
+    CRYSTALS,
+    MOIETIES,
+    example_parser,
+    output_dir,
+    output_file,
+    write_report,
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Repair missing H atoms in a crystal structure")
-    parser.add_argument("--output", default="simulation_ready_IRMOF-1.cif")
-    parser.add_argument("--fragment-path", default=str(MOIETY_DIR))
+    parser = example_parser("structure_repair", __doc__, seed=True)
+    parser.add_argument("--output")
+    parser.add_argument("--fragment-path", type=Path, default=MOIETIES)
     args = parser.parse_args()
+    out = output_dir(args)
+    from mofforge import (
+        Crystal,
+        find_pattern,
+        fragment,
+        infer_bonds,
+        replace_pattern,
+        validate_structure,
+    )
 
-    run_correct_missing_h(args.output, args.fragment_path)
+    parent = infer_bonds(Crystal.from_cif(CRYSTALS / "IRMOF-1_noH.cif"))
+    query = fragment("1,4-C-phenylene_noH.xyz", fragment_path=args.fragment_path)
+    replacement = fragment("1,4-C-phenylene.xyz", fragment_path=args.fragment_path)
+    match = find_pattern(query, parent)
+    if not match.nb_locations():
+        raise SystemExit("Bare aromatic rings were not found.")
+    child = replace_pattern(match, replacement, random_seed=args.seed)
+    destination = output_file(args, "repaired_IRMOF-1.cif")
+    child.write_cif(destination)
+    write_report(
+        out,
+        parent_atoms=parent.n_atoms,
+        child_atoms=child.n_atoms,
+        added_hydrogens=child.species.count("H") - parent.species.count("H"),
+        output=destination,
+        validation=validate_structure(infer_bonds(child)).to_dict(),
+    )
 
 
 if __name__ == "__main__":

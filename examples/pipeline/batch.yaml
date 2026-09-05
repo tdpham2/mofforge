@@ -1,0 +1,17 @@
+# Run from the repository root, or use batch_processing.py for resolved paths.
+parents:
+  - path: examples/data/crystals/IRMOF-1.cif
+operations:
+  - type: replace
+    query: 2-!-p-phenylene.xyz
+    replacement: 2-nitro-p-phenylene.xyz
+    mode: nb_loc_2
+    random_seed: 42
+  - type: validate
+output:
+  directory: examples/_outputs/batch_yaml
+  format: cif
+  naming: "{parent_name}_nitro"
+moiety_path: examples/data/moieties
+parallel: 0
+random_seed: 42

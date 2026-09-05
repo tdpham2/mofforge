@@ -304,36 +304,22 @@ print(f"Placed {result.n_adsorbates} adsorbates, {result.clashes} clashes")
 
 ## Examples
 
-All examples are in the `examples/` directory with sample data in `examples/data/`.
-
-### Core examples
-
-| Script | Description |
-|--------|-------------|
-| [`pattern_matching.py`](examples/search/pattern_matching.py) | Find p-phenylene linkers in IRMOF-1 |
-| [`linker_functionalization.py`](examples/modify/linker_functionalization.py) | Functionalize BDC linkers with acetylamido groups |
-| [`selective_modification.py`](examples/modify/selective_modification.py) | All 5 replacement modes demonstrated |
-| [`structure_repair.py`](examples/repair/structure_repair.py) | Repair missing hydrogen atoms from X-ray data |
-| [`cleanup_and_repair.py`](examples/repair/cleanup_and_repair.py) | Fix disordered rings and remove guest molecules |
-| [`defect_engineering.py`](examples/modify/defect_engineering.py) | Engineer missing-linker defects in UiO-66 |
-| [`symmetry_analysis.py`](examples/search/symmetry_analysis.py) | Replacement with symmetry analysis and supercell construction |
-
-### Advanced examples
-
-| Script | Description |
-|--------|-------------|
-| [`string_pattern_search.py`](examples/search/string_pattern_search.py) | String-based pattern matching: `"[Zn]-[O]"`, rings, wildcards |
-| [`multi_step_pipeline.py`](examples/pipeline/multi_step_pipeline.py) | Chain multiple operations with provenance tracking |
-| [`structure_validation.py`](examples/validation/structure_validation.py) | Post-modification structure validation |
-
-Run any example:
+The [examples cookbook](examples/README.md) contains **36 runnable lessons** with
+13 topic guides, expected results, parameter explanations, and extension exercises.
+Start with structure I/O and search, then explore modification, construction,
+adsorbates, databases, visualization, automation, and MCP/ChemGraph integration.
 
 ```bash
-cd examples
-python pattern_matching.py
-python linker_functionalization.py --nb-loc 6
-python structure_validation.py path/to/structure.cif
+uv run --no-sync python examples/fundamentals/structure_io.py
+uv run --no-sync python examples/search/pattern_matching.py
+uv run --no-sync python examples/modify/linker_functionalization.py --nb-loc 6 --seed 42
 ```
+
+Bundled inputs make core lessons immediately runnable. Optional prerequisites
+are listed per lesson; database examples include clearly fictional demonstrations
+and support your own real data. Generated files default to `examples/_outputs/`.
+See [verification notes](examples/VERIFICATION.md) for tested environments and
+optional integration coverage.
 
 ## How It Works
 
