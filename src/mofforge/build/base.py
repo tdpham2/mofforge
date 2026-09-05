@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from mofforge.core.crystal import Crystal
-
+from mofforge.validation import ValidationReport
 
 
 @dataclass
@@ -48,6 +48,7 @@ class BuildResult:
     elapsed_seconds: float = 0.0
     backend: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    validation: ValidationReport | None = None
 
 
 class Timer:
@@ -63,7 +64,6 @@ class Timer:
 
     def __exit__(self, *_: object) -> None:
         self.elapsed = time.monotonic() - self._start
-
 
 
 @runtime_checkable

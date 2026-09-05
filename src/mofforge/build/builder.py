@@ -77,8 +77,7 @@ class MOFBuilder:
         result = self._backend.add_building_block(block)
         if not result.get("success", False):
             raise ValueError(
-                f"Failed to register node '{block.name}': "
-                f"{result.get('error', 'unknown error')}"
+                f"Failed to register node '{block.name}': {result.get('error', 'unknown error')}"
             )
         self._nodes.append(block)
 
@@ -93,8 +92,7 @@ class MOFBuilder:
         result = self._backend.add_building_block(block)
         if not result.get("success", False):
             raise ValueError(
-                f"Failed to register edge '{block.name}': "
-                f"{result.get('error', 'unknown error')}"
+                f"Failed to register edge '{block.name}': {result.get('error', 'unknown error')}"
             )
         self._edges.append(block)
 
@@ -192,7 +190,7 @@ class MOFBuilder:
             if p.suffix in (".cif", ".xyz", ".mol2"):
                 name = p.stem
             else:
-                # Assume SMILES or database name – use a prefix + hash
+                # Assume SMILES or database name - use a prefix + hash
                 # to avoid collisions between similar strings.
                 digest = hashlib.sha256(source_str.encode()).hexdigest()[:8]
                 name = f"{source_str[:12].replace('/', '_')}_{digest}"

@@ -13,9 +13,9 @@ from mofforge.build.smiles_to_bb import (
 
 __all__ = [
     "BuildConfig",
+    "BuildResult",
     "BuilderBackend",
     "BuildingBlock",
-    "BuildResult",
     "ConfigError",
     "ConnectionInfo",
     "MOFBuilder",

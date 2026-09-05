@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from mofforge.build.base import BuildingBlock, BuildResult, Timer, Topology
 from mofforge.build.config import ConfigError, validate_tobacco, validate_tobacco_data_dir
-from mofforge.core.crystal import Crystal
+from mofforge.build.results import finalize_build
+from mofforge.provenance import file_hash
 
 logger = logging.getLogger("mofforge")
 
@@ -31,7 +32,7 @@ class TobaccoBackend:
     # Map a logical role to (active dir, database dir).  The active dirs are the
     # small curated defaults shipped in the tobacco repo; the *_database dirs are
     # the full catalog.  Both are searched when resolving a block/topology name.
-    _ROLE_DIRS: dict[str, tuple[str, str]] = {
+    _ROLE_DIRS: ClassVar[dict[str, tuple[str, str]]] = {
         "node": ("nodes", "nodes_database"),
         "edge": ("edges", "edges_database"),
         "template": ("templates", "template_database"),
@@ -46,9 +47,7 @@ class TobaccoBackend:
         data_errors = validate_tobacco_data_dir(self._data_dir)
         if data_errors:
             details = "\n  ".join(data_errors)
-            raise ConfigError(
-                f"Invalid TOBACCO data directory at {self._data_dir}:\n  {details}"
-            )
+            raise ConfigError(f"Invalid TOBACCO data directory at {self._data_dir}:\n  {details}")
 
         import tobacco3
 
@@ -71,9 +70,7 @@ class TobaccoBackend:
             names.update(f.name for f in d.iterdir() if f.suffix == ".cif")
         return sorted(names)
 
-    def _resolve_cif(
-        self, role: Literal["node", "edge", "template"], name: str
-    ) -> Path | None:
+    def _resolve_cif(self, role: Literal["node", "edge", "template"], name: str) -> Path | None:
         """Resolve a bare block/topology *name* to a concrete CIF path.
 
         Accepts either an existing filesystem path or a name looked up in the
@@ -162,6 +159,17 @@ class TobaccoBackend:
 
         results: list[Any] = []
         errors: list[str] = []
+        overrides = {
+            "RUN_PARALLEL" if key == "parallel" else key: value for key, value in options.items()
+        }
+        unknown = set(overrides) - {f.name for f in fields(self._cfg)}
+        if unknown:
+            return BuildResult(
+                success=False,
+                backend=self.name,
+                errors=[f"Unknown build options: {sorted(unknown)}"],
+            )
+        effective_config = replace(self._cfg, **overrides)
         timer = Timer()
         with timer:
             try:
@@ -169,7 +177,7 @@ class TobaccoBackend:
                     template_obj,
                     node_objs,
                     edge_objs,
-                    config=self._cfg,
+                    config=effective_config,
                     quiet=not verbose,
                 )
             except Exception as exc:
@@ -201,21 +209,9 @@ class TobaccoBackend:
             except Exception as exc:
                 errors.append(f"Failed to write {r.cifname}: {exc}")
 
-        # Load the first structure as a Crystal for downstream inspection.
-        crystal: Crystal | None = None
-        if copied:
-            try:
-                from mofforge.core.bonding import infer_bonds
-
-                crystal = Crystal.from_cif(str(copied[0]))
-                crystal = infer_bonds(crystal, periodic=True)
-            except Exception as exc:
-                logger.warning("Could not load output CIF as Crystal: %s", exc)
-
-        return BuildResult(
+        result = BuildResult(
             success=bool(copied),
             output_paths=copied,
-            crystal=crystal,
             errors=errors,
             elapsed_seconds=round(timer.elapsed, 2),
             backend=self.name,
@@ -231,6 +227,20 @@ class TobaccoBackend:
                     }
                     for r in results
                 ],
+            },
+        )
+        return finalize_build(
+            result,
+            {
+                "topology": topology.name,
+                "options": options,
+                "configuration": effective_config.as_dict(),
+                "inputs": {
+                    str(p): file_hash(p)
+                    for p in [template_path]
+                    + [self._resolve_cif(b.role, str(b.source)) for b in nodes + edges]
+                    if p is not None
+                },
             },
         )
 

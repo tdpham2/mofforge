@@ -9,16 +9,17 @@ import shutil
 from pathlib import Path
 from typing import Any, Literal
 
-from mofforge.build.base import BuildResult, BuildingBlock, Timer, Topology
-from mofforge.core.crystal import Crystal
+from mofforge.build.base import BuildingBlock, BuildResult, Timer, Topology
+from mofforge.build.results import finalize_build
+from mofforge.provenance import file_hash
 
 logger = logging.getLogger("mofforge")
 
 _pm = None  # cached pormake module
 
 
-def _get_pormake():  # noqa: ANN202
-    global _pm  # noqa: PLW0603
+def _get_pormake():
+    global _pm
     if _pm is None:
         try:
             import pormake as pm
@@ -58,14 +59,14 @@ class PormakeBackend:
         # Cached pormake Database (lazy-initialised)
         self._db: object | None = None
 
-    def _get_database(self):  # noqa: ANN202
+    def _get_database(self):
         """Return a (cached) pormake.Database instance."""
         if self._db is None:
             pm = _get_pormake()
             self._db = pm.Database()
         return self._db
 
-    def _load_pormake_bb(self, block: BuildingBlock):  # noqa: ANN202
+    def _load_pormake_bb(self, block: BuildingBlock):
         """Convert a :class:`BuildingBlock` into a ``pormake.BuildingBlock``."""
         pm = _get_pormake()
         src = Path(str(block.source))
@@ -77,7 +78,7 @@ class PormakeBackend:
         # Try as a database name
         try:
             db = self._get_database()
-            return db.get_bb(block.name)
+            return db.get_bb(str(block.source))
         except (KeyError, ValueError):
             logger.debug("'%s' not found in pormake database", block.name, exc_info=True)
 
@@ -94,6 +95,13 @@ class PormakeBackend:
         **options: Any,
     ) -> BuildResult:
         """Build a MOF using pormake."""
+        unknown = set(options) - {"accuracy", "wrap", "permutations"}
+        if unknown:
+            return BuildResult(
+                success=False,
+                backend=self.name,
+                errors=[f"Unknown build options: {sorted(unknown)}"],
+            )
         pm = _get_pormake()
         output_dir = Path(output_dir).resolve() if output_dir is not None else self._output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -204,23 +212,11 @@ class PormakeBackend:
                     backend=self.name,
                 )
 
-        # --- Load as Crystal ---
-        crystal: Crystal | None = None
-        output_paths: list[Path] = []
-        if cif_path.is_file():
-            output_paths.append(cif_path)
-            try:
-                from mofforge.core.bonding import infer_bonds
+        output_paths = [cif_path] if cif_path.is_file() else []
 
-                crystal = Crystal.from_cif(str(cif_path))
-                crystal = infer_bonds(crystal, periodic=True)
-            except Exception as exc:
-                logger.warning("Could not load output CIF as Crystal: %s", exc)
-
-        return BuildResult(
+        result = BuildResult(
             success=True,
             output_paths=output_paths,
-            crystal=crystal,
             errors=errors,
             elapsed_seconds=round(timer.elapsed, 2),
             backend=self.name,
@@ -233,6 +229,26 @@ class PormakeBackend:
                     for k, v in getattr(framework, "info", {}).items()
                     if k in ("relax_obj", "max_rmsd", "mean_rmsd")
                 },
+            },
+        )
+        return finalize_build(
+            result,
+            {
+                "topology": topology.name,
+                "options": {"accuracy": 6, "wrap": True, **options},
+                "inputs": {
+                    str(path): file_hash(path)
+                    for path in [db.topo_dir / f"{topology.name}.cgd"]
+                    + [
+                        Path(str(b.source))
+                        if Path(str(b.source)).is_file()
+                        else db.bb_dir / f"{b.source}.xyz"
+                        for b in nodes + edges
+                    ]
+                    if path.is_file()
+                },
+                "nodes": [str(n.source) for n in nodes],
+                "edges": [str(e.source) for e in edges],
             },
         )
 
@@ -464,8 +480,8 @@ class PormakeBackend:
         import tempfile
 
         import py3Dmol
-        from architector.io_molecule import convert_io_molecule
         from architector import io_ptable
+        from architector.io_molecule import convert_io_molecule
         from playwright.sync_api import sync_playwright
 
         mol = convert_io_molecule(smiles)
