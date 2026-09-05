@@ -1,0 +1,284 @@
+[
+  {
+    "script": "fundamentals/structure_io.py",
+    "title": "Structure I/O and bond inference",
+    "topic": "Fundamentals",
+    "guide": "fundamentals/README.md",
+    "requires": []
+  },
+  {
+    "script": "fundamentals/periodic_geometry.py",
+    "title": "Periodic geometry in a skewed cell",
+    "topic": "Fundamentals",
+    "guide": "fundamentals/README.md",
+    "requires": []
+  },
+  {
+    "script": "fundamentals/bonding_rules.py",
+    "title": "Custom bonding rules",
+    "topic": "Fundamentals",
+    "guide": "fundamentals/README.md",
+    "requires": []
+  },
+  {
+    "script": "search/symmetry_analysis.py",
+    "title": "Symmetry and supercells",
+    "topic": "Fundamentals",
+    "guide": "fundamentals/README.md",
+    "requires": []
+  },
+  {
+    "script": "search/pattern_matching.py",
+    "title": "Fragment matching",
+    "topic": "Search",
+    "guide": "search/README.md",
+    "requires": []
+  },
+  {
+    "script": "search/string_pattern_search.py",
+    "title": "String pattern matching",
+    "topic": "Search",
+    "guide": "search/README.md",
+    "requires": []
+  },
+  {
+    "script": "modify/linker_functionalization.py",
+    "title": "Acetylamido substitution",
+    "topic": "Fragment modification",
+    "guide": "modify/README.md",
+    "requires": []
+  },
+  {
+    "script": "modify/selective_modification.py",
+    "title": "Five replacement modes",
+    "topic": "Fragment modification",
+    "guide": "modify/README.md",
+    "requires": []
+  },
+  {
+    "script": "modify/defect_engineering.py",
+    "title": "Missing-linker defects",
+    "topic": "Fragment modification",
+    "guide": "modify/README.md",
+    "requires": []
+  },
+  {
+    "script": "modify/agent_functionalization.py",
+    "title": "Site and group selection",
+    "topic": "SMILES functionalization",
+    "guide": "modify/functionalization.md",
+    "requires": [
+      "rdkit"
+    ]
+  },
+  {
+    "script": "modify/functionalization_campaign.py",
+    "title": "Functionalization campaigns",
+    "topic": "SMILES functionalization",
+    "guide": "modify/functionalization.md",
+    "requires": [
+      "rdkit"
+    ]
+  },
+  {
+    "script": "repair/structure_repair.py",
+    "title": "Restore missing hydrogens",
+    "topic": "Repair",
+    "guide": "repair/README.md",
+    "requires": []
+  },
+  {
+    "script": "repair/cleanup_and_repair.py",
+    "title": "Repair disorder and remove guests",
+    "topic": "Repair",
+    "guide": "repair/README.md",
+    "requires": []
+  },
+  {
+    "script": "repair/solvent_removal.py",
+    "title": "Automatic solvent removal",
+    "topic": "Repair",
+    "guide": "repair/README.md",
+    "requires": []
+  },
+  {
+    "script": "build/pormake_build.py",
+    "title": "Pormake construction",
+    "topic": "Construction",
+    "guide": "build/README.md",
+    "requires": [
+      "pormake"
+    ],
+    "integration": "build"
+  },
+  {
+    "script": "build/tobacco_build.py",
+    "title": "TOBACCO construction",
+    "topic": "Construction",
+    "guide": "build/README.md",
+    "requires": [
+      "tobacco3"
+    ],
+    "integration": "build"
+  },
+  {
+    "script": "build/smiles_building_blocks.py",
+    "title": "SMILES building blocks",
+    "topic": "Construction",
+    "guide": "build/README.md",
+    "requires": [
+      "rdkit"
+    ]
+  },
+  {
+    "script": "build/pcu_zn_random_linker.py",
+    "title": "Compatible random linkers",
+    "topic": "Construction",
+    "guide": "build/README.md",
+    "requires": [
+      "pormake"
+    ],
+    "integration": "build"
+  },
+  {
+    "script": "adsorbate/site_discovery.py",
+    "title": "Adsorption site discovery",
+    "topic": "Adsorbates",
+    "guide": "adsorbate/README.md",
+    "requires": []
+  },
+  {
+    "script": "adsorbate/placement.py",
+    "title": "Built-in and custom guest placement",
+    "topic": "Adsorbates",
+    "guide": "adsorbate/README.md",
+    "requires": []
+  },
+  {
+    "script": "validation/structure_validation.py",
+    "title": "Validation and negative controls",
+    "topic": "Validation",
+    "guide": "validation/README.md",
+    "requires": []
+  },
+  {
+    "script": "vis/interactive_html.py",
+    "title": "Interactive HTML",
+    "topic": "Visualization",
+    "guide": "vis/README.md",
+    "requires": []
+  },
+  {
+    "script": "vis/png_rendering.py",
+    "title": "Synchronous and asynchronous PNG",
+    "topic": "Visualization",
+    "guide": "vis/README.md",
+    "requires": [
+      "playwright"
+    ],
+    "integration": "render"
+  },
+  {
+    "script": "pipeline/multi_step_pipeline.py",
+    "title": "Multi-step modification",
+    "topic": "Automation",
+    "guide": "pipeline/README.md",
+    "requires": []
+  },
+  {
+    "script": "pipeline/cleanup_pipeline.py",
+    "title": "Cleanup pipeline",
+    "topic": "Automation",
+    "guide": "pipeline/README.md",
+    "requires": []
+  },
+  {
+    "script": "pipeline/batch_processing.py",
+    "title": "YAML batch processing",
+    "topic": "Automation",
+    "guide": "pipeline/README.md",
+    "requires": []
+  },
+  {
+    "script": "pipeline/provenance_replay.py",
+    "title": "Provenance and replay",
+    "topic": "Automation",
+    "guide": "pipeline/README.md",
+    "requires": []
+  },
+  {
+    "script": "pipeline/artifact_verification.py",
+    "title": "Artifact verification",
+    "topic": "Automation",
+    "guide": "pipeline/README.md",
+    "requires": []
+  },
+  {
+    "script": "databases/csd_lookup.py",
+    "title": "CSD lookup",
+    "topic": "Databases",
+    "guide": "databases/README.md",
+    "requires": []
+  },
+  {
+    "script": "databases/coremof_screening.py",
+    "title": "CoRE MOF screening",
+    "topic": "Databases",
+    "guide": "databases/README.md",
+    "requires": []
+  },
+  {
+    "script": "databases/bridge_and_resolve.py",
+    "title": "Database bridge and CIF resolution",
+    "topic": "Databases",
+    "guide": "databases/README.md",
+    "requires": []
+  },
+  {
+    "script": "mcp/local_client.py",
+    "title": "Local MCP client",
+    "topic": "MCP and ChemGraph",
+    "guide": "mcp/README.md",
+    "requires": [
+      "mcp"
+    ]
+  },
+  {
+    "script": "build/mcp_build_test.py",
+    "title": "Construction through MCP",
+    "topic": "MCP and ChemGraph",
+    "guide": "mcp/README.md",
+    "requires": [
+      "mcp",
+      "pormake"
+    ],
+    "integration": "build"
+  },
+  {
+    "script": "mcp/chemgraph_integration.py",
+    "title": "ChemGraph-compatible tool adapter",
+    "topic": "MCP and ChemGraph",
+    "guide": "mcp/README.md",
+    "requires": [
+      "mcp",
+      "langchain_mcp_adapters"
+    ]
+  },
+  {
+    "script": "workflows/build_and_modify.py",
+    "title": "Build and modify",
+    "topic": "Complete workflows",
+    "guide": "workflows/README.md",
+    "requires": [
+      "pormake"
+    ],
+    "integration": "build"
+  },
+  {
+    "script": "workflows/screen_and_place.py",
+    "title": "Screen and place",
+    "topic": "Complete workflows",
+    "guide": "workflows/README.md",
+    "requires": []
+  }
+]

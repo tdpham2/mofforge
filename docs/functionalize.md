@@ -1,5 +1,7 @@
 # Agent-Driven Linker Functionalization
 
+[Functionalization lessons](../examples/modify/functionalization.md) provides runnable workflows with bundled inputs and expected results.
+
 mofforge lets an AI agent perform post-synthetic **linker functionalization** —
 decorating a MOF's organic linker with a functional group (–NH₂, –NO₂, –F, …) —
 without ever authoring 3-D geometry or SMILES.

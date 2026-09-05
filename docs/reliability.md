@@ -1,5 +1,7 @@
 # Research reliability in 0.2
 
+[Validation and reliability lessons](../examples/validation/README.md) provides runnable workflows with bundled inputs and expected results.
+
 Version 0.2 corrects scientific behavior while retaining the main Python entry
 points. A validation pass means the required geometric checks ran without hard
 errors. It does not establish energetic stability or experimental feasibility.

@@ -38,6 +38,7 @@ Thumbs.db
 # Runtime artifacts
 runtime.log
 tobacco_output/
+examples/_outputs/
 
 # User-local builder config (contains machine-specific paths)
 mofforge.toml

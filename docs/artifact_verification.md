@@ -1,5 +1,7 @@
 # Artifact verification
 
+[Executable verification lesson](../examples/pipeline/README.md) provides runnable workflows with bundled inputs and expected results.
+
 This unreleased follow-up adds complete batch input records and a read-only
 artifact verifier. It does not yet provide checkpoint resumption, lossless
 reload, or atomic publication of a structure/manifest pair.

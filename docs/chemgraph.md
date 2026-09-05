@@ -1,5 +1,7 @@
 # ChemGraph Integration
 
+[Executable MCP and ChemGraph lessons](../examples/mcp/README.md) provides runnable workflows with bundled inputs and expected results.
+
 [ChemGraph](https://github.com/argonne-lcf/ChemGraph) is an agentic framework
 (LangGraph + ASE) from Argonne LCF that drives molecular-simulation workflows
 with LLMs. mofforge exposes its MOF capabilities to ChemGraph as **MCP (Model

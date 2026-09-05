@@ -10,13 +10,13 @@ test-cov:  ## Run tests with coverage
 	uv run --no-sync pytest tests/ --cov=mofforge --cov-report=term-missing
 
 lint:  ## Run linter
-	uv run --no-sync ruff check src/ tests/
+	uv run --no-sync ruff check src/ tests/ examples/
 
 format:  ## Format code
-	uv run --no-sync ruff format src/ tests/
+	uv run --no-sync ruff format src/ tests/ examples/
 
 fix:  ## Auto-fix lint issues
-	uv run --no-sync ruff check src/ tests/ --fix
+	uv run --no-sync ruff check src/ tests/ examples/ --fix
 
 check: lint test  ## Run lint + tests
 

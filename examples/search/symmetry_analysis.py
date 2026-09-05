@@ -1,137 +1,61 @@
 #!/usr/bin/env python3
-"""Symmetry-Aware Replacement
+"""Compare symmetry after modification and construct a supercell.
 
-Demonstrates substructure replacement on a crystal structure while
-examining the symmetry properties, and optionally building a supercell.
-
-In mofforge we use pymatgen's SpacegroupAnalyzer for symmetry analysis
-and Structure.make_supercell for replication.
-
-Input files:
-    data/crystals/NiPyC_fragment_trouble.cif  - Parent crystal (NiPyC)
-    data/moieties/PyC.xyz                     - Query (PyC linker with H! tag)
-    data/moieties/PyC-CH3.xyz                 - Replacement (PyC with methyl group)
-
-Usage:
-    python search/symmetry_analysis.py
+Run this file directly; see the topic README for the scientific walkthrough.
 """
 
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
-
-SCRIPT_DIR = Path(__file__).parent
-EXAMPLES_DIR = SCRIPT_DIR.parent
-CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
-MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
+# Only cookbook helpers are added to the path; install mofforge separately.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _common import CRYSTALS, MOIETIES, example_parser, output_dir, write_report
 
 
-def run_symmetry_example():
-    """Demonstrate replacement with symmetry analysis."""
-
-    # -------------------------------------------------------------------------
-    # Step 1: Load parent crystal and examine symmetry
-    # -------------------------------------------------------------------------
-    print("Loading parent: NiPyC_fragment_trouble.cif")
-    parent = Crystal.from_cif(CRYSTAL_DIR / "NiPyC_fragment_trouble.cif")
-    print(f"  Atoms: {parent.n_atoms}")
-    print(
-        f"  Lattice: a={parent.lattice.a:.3f}, b={parent.lattice.b:.3f}, c={parent.lattice.c:.3f} A"
-    )
-    print(
-        f"  Angles: alpha={parent.lattice.alpha:.1f}, "
-        f"beta={parent.lattice.beta:.1f}, gamma={parent.lattice.gamma:.1f}"
-    )
-
-    # Analyze symmetry with pymatgen
+def main():
+    args = example_parser("symmetry_analysis", __doc__, seed=True).parse_args()
+    out = output_dir(args)
+    import numpy as np
     from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-    sga = SpacegroupAnalyzer(parent.structure)
-    spacegroup = sga.get_space_group_symbol()
-    sg_number = sga.get_space_group_number()
-    print(f"  Space group: {spacegroup} (#{sg_number})")
+    from mofforge import Crystal, find_pattern, fragment, infer_bonds, replace_pattern
 
-    # Symmetry operations
-    sym_ops = sga.get_symmetry_operations()
-    print(f"  Symmetry operations: {len(sym_ops)}")
-
-    # -------------------------------------------------------------------------
-    # Step 2: Infer bonds
-    # -------------------------------------------------------------------------
-    print("\nInferring bonds...")
-    parent = infer_bonds(parent, periodic=True)
-    print(f"  Bonds: {parent.n_bonds}")
-
-    # -------------------------------------------------------------------------
-    # Step 3: Load query and replacement fragments
-    # -------------------------------------------------------------------------
-    print("\nLoading query: PyC.xyz")
-    query = fragment("PyC.xyz", fragment_path=str(MOIETY_DIR))
-    r_atoms = [s for s in query.species if "!" in s]
-    print(f"  Atoms: {query.n_atoms}, R-group: {len(r_atoms)} ({set(r_atoms)})")
-
-    print("Loading replacement: PyC-CH3.xyz")
-    replacement = fragment("PyC-CH3.xyz", fragment_path=str(MOIETY_DIR))
-    print(f"  Atoms: {replacement.n_atoms}")
-
-    # -------------------------------------------------------------------------
-    # Step 4: Search
-    # -------------------------------------------------------------------------
-    print("\nSearching for PyC linkers...")
-    search = find_pattern(query, parent)
-    print(f"  Found {search.nb_isomorphisms()} isomorphisms at {search.nb_locations()} locations")
-
-    if search.nb_locations() == 0:
-        print("  No matches found. This may be because the CIF structure is")
-        print("  in a non-P1 representation. Try a different input CIF.")
-        return
-
-    # -------------------------------------------------------------------------
-    # Step 5: Replace at 1 location
-    # -------------------------------------------------------------------------
-    print(f"\nReplacing at 1 location...")
-    child = replace_pattern(
-        search,
-        replacement,
-        nb_loc=1,
-        name="NiPyC_CH3",
+    parent = infer_bonds(Crystal.from_cif(CRYSTALS / "NiPyC_fragment_trouble.cif"))
+    query = fragment("PyC.xyz", fragment_path=MOIETIES)
+    replacement = fragment("PyC-CH3.xyz", fragment_path=MOIETIES)
+    match = find_pattern(query, parent)
+    if not match.nb_locations():
+        raise SystemExit("Expected PyC linker was not found.")
+    child = replace_pattern(match, replacement, nb_loc=1, random_seed=args.seed)
+    # Wrapping changes coordinate representatives, preserving periodic positions.
+    wrapped = child.wrap()
+    np.testing.assert_allclose(
+        child.lattice.get_all_distances(child.frac_coords, wrapped.frac_coords).diagonal(),
+        0,
+        atol=1e-8,
     )
-    print(f"  Parent atoms: {parent.n_atoms}")
-    print(f"  Child atoms:  {child.n_atoms}")
-
-    # -------------------------------------------------------------------------
-    # Step 6: Analyze child symmetry
-    # -------------------------------------------------------------------------
-    print("\nChild symmetry analysis:")
-    try:
-        sga_child = SpacegroupAnalyzer(child.structure)
-        print(
-            f"  Space group: {sga_child.get_space_group_symbol()} "
-            f"(#{sga_child.get_space_group_number()})"
-        )
-    except Exception as e:
-        print(f"  Could not determine space group: {e}")
-
-    # -------------------------------------------------------------------------
-    # Step 7: Make supercell (2x2x2)
-    # -------------------------------------------------------------------------
-    print("\nBuilding 2x2x2 supercell...")
-    supercell_struct = child.structure.copy()
-    supercell_struct.make_supercell([2, 2, 2])
-    supercell = Crystal.from_structure(supercell_struct, name="NiPyC_CH3_supercell")
-    supercell = infer_bonds(supercell, periodic=True)
-    print(f"  Supercell atoms: {supercell.n_atoms}")
-    print(f"  Supercell bonds: {supercell.n_bonds}")
-
-    # -------------------------------------------------------------------------
-    # Step 8: Write outputs
-    # -------------------------------------------------------------------------
-    child.write_cif("NiPyC_CH3.cif")
-    supercell.write_cif("NiPyC_CH3_supercell.cif")
-    print(f"\nOutputs: NiPyC_CH3.cif, NiPyC_CH3_supercell.cif")
-
-    return child, supercell
+    structure = wrapped.structure.copy()
+    structure.make_supercell([2, 1, 1])
+    supercell = infer_bonds(Crystal.from_structure(structure, name="NiPyC_supercell"))
+    child.write_cif(out / "NiPyC_CH3.cif")
+    supercell.write_cif(out / "NiPyC_CH3_supercell.cif")
+    write_report(
+        out,
+        seed=args.seed,
+        parent_atoms=parent.n_atoms,
+        child_atoms=child.n_atoms,
+        supercell_atoms=supercell.n_atoms,
+        symprec_angstrom=0.1,
+        parent_spacegroup=SpacegroupAnalyzer(
+            parent.structure, symprec=0.1
+        ).get_space_group_symbol(),
+        child_spacegroup=SpacegroupAnalyzer(child.structure, symprec=0.1).get_space_group_symbol(),
+        sample_fractional=wrapped.frac_coords[0],
+        sample_cartesian_angstrom=wrapped.cart_coords[0],
+    )
 
 
 if __name__ == "__main__":
-    run_symmetry_example()
+    main()

@@ -1,108 +1,62 @@
 #!/usr/bin/env python3
-"""Linker Functionalization
+"""Replace selected phenylene hydrogens with acetylamido groups.
 
-Demonstrates generating a hypothetical mixed-linker MOF by decorating
-selected BDC linkers in IRMOF-1 with acetylamido functional groups.
-
-The query uses a '!'-tagged hydrogen to mark the replacement site.
-The replacement fragment has the acetylamido group in place of that hydrogen.
-
-Input files:
-    data/crystals/IRMOF-1.cif                    - Parent MOF
-    data/moieties/2-!-p-phenylene.xyz            - Query (phenylene with H! tag)
-    data/moieties/2-acetylamido-p-phenylene.xyz   - Replacement (phenylene with acetylamido)
-
-Usage:
-    python modify/linker_functionalization.py
-    python modify/linker_functionalization.py --nb-loc 6 --output my_mof.cif
+Run this file directly; see the topic README for the scientific walkthrough.
 """
 
-import argparse
+from __future__ import annotations
+
+import sys
 from pathlib import Path
 
-from mofforge import Crystal, infer_bonds, fragment, find_pattern, replace_pattern
-
-SCRIPT_DIR = Path(__file__).parent
-EXAMPLES_DIR = SCRIPT_DIR.parent
-CRYSTAL_DIR = EXAMPLES_DIR / "data" / "crystals"
-MOIETY_DIR = EXAMPLES_DIR / "data" / "moieties"
-
-
-def run_hypothetical_mof(crystal_path: str, nb_loc: int, output: str, fragment_path: str):
-    """Build a hypothetical functionalized MOF."""
-
-    # -------------------------------------------------------------------------
-    # Step 1: Load parent crystal and infer bonds
-    # -------------------------------------------------------------------------
-    print(f"Loading parent: {crystal_path}")
-    parent = Crystal.from_cif(crystal_path)
-    parent = infer_bonds(parent, periodic=True)
-    print(f"  Atoms: {parent.n_atoms}, Bonds: {parent.n_bonds}")
-
-    # -------------------------------------------------------------------------
-    # Step 2: Load query fragment (phenylene with masked H)
-    #
-    # The '!' suffix on the H atom in 2-!-p-phenylene.xyz marks it as an
-    # R-group atom. During replacement, this H and its corresponding parent
-    # atom will be removed and the acetylamido group installed in its place.
-    # -------------------------------------------------------------------------
-    print("\nLoading query: 2-!-p-phenylene.xyz")
-    query = fragment("2-!-p-phenylene.xyz", fragment_path=fragment_path)
-    print(f"  Atoms: {query.n_atoms}")
-    print(f"  Species: {query.species}")
-    r_group = [s for s in query.species if "!" in s]
-    print(f"  R-group atoms (will be replaced): {r_group}")
-
-    # -------------------------------------------------------------------------
-    # Step 3: Load replacement fragment (phenylene with acetylamido group)
-    # -------------------------------------------------------------------------
-    print("\nLoading replacement: 2-acetylamido-p-phenylene.xyz")
-    replacement = fragment("2-acetylamido-p-phenylene.xyz", fragment_path=fragment_path)
-    print(f"  Atoms: {replacement.n_atoms}")
-    print(f"  Species: {replacement.species}")
-
-    # -------------------------------------------------------------------------
-    # Step 4: Search for query in parent
-    # -------------------------------------------------------------------------
-    print("\nSearching...")
-    search = find_pattern(query, parent)
-    print(f"  Found {search.nb_isomorphisms()} isomorphisms at {search.nb_locations()} locations")
-
-    # -------------------------------------------------------------------------
-    # Step 5: Replace at selected locations
-    #
-    # nb_loc=6 means: randomly select 6 of the 24 BDC linker locations.
-    # Omitting nb_loc would replace ALL locations.
-    # Use loc=[1,5,10] to specify exact locations.
-    # -------------------------------------------------------------------------
-    print(f"\nReplacing at {nb_loc} random location(s)...")
-    child = replace_pattern(
-        search,
-        replacement,
-        nb_loc=nb_loc,
-        name="acetylamido_IRMOF-1",
-    )
-    print(f"  Child atoms: {child.n_atoms} (parent had {parent.n_atoms})")
-    print(f"  Atoms added per replacement: {(child.n_atoms - parent.n_atoms) / nb_loc:.0f}")
-
-    # -------------------------------------------------------------------------
-    # Step 6: Write output
-    # -------------------------------------------------------------------------
-    child.write_cif(output)
-    print(f"\nOutput written to: {output}")
+# Only cookbook helpers are added to the path; install mofforge separately.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _common import (
+    CRYSTALS,
+    MOIETIES,
+    example_parser,
+    output_dir,
+    output_file,
+    write_report,
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a hypothetical functionalized MOF")
-    parser.add_argument("--crystal", default=str(CRYSTAL_DIR / "IRMOF-1.cif"))
-    parser.add_argument(
-        "--nb-loc", type=int, default=6, help="Number of random locations to functionalize"
-    )
-    parser.add_argument("--output", default="acetylamido_IRMOF-1.cif")
-    parser.add_argument("--fragment-path", default=str(MOIETY_DIR))
+    parser = example_parser("linker_functionalization", __doc__, seed=True)
+    parser.add_argument("--crystal", type=Path, default=CRYSTALS / "IRMOF-1.cif")
+    parser.add_argument("--nb-loc", type=int, default=6)
+    parser.add_argument("--output", help="Override the primary CIF filename.")
+    parser.add_argument("--fragment-path", type=Path, default=MOIETIES)
     args = parser.parse_args()
+    out = output_dir(args)
+    from mofforge import (
+        Crystal,
+        find_pattern,
+        fragment,
+        infer_bonds,
+        replace_pattern,
+        validate_structure,
+    )
 
-    run_hypothetical_mof(args.crystal, args.nb_loc, args.output, args.fragment_path)
+    parent = infer_bonds(Crystal.from_cif(args.crystal))
+    # H! marks the atom to remove; untagged atoms provide the alignment scaffold.
+    query = fragment("2-!-p-phenylene.xyz", fragment_path=args.fragment_path)
+    replacement = fragment("2-acetylamido-p-phenylene.xyz", fragment_path=args.fragment_path)
+    match = find_pattern(query, parent)
+    if not match.nb_locations():
+        raise SystemExit("Query not found: check explicit linker hydrogens.")
+    child = replace_pattern(match, replacement, nb_loc=args.nb_loc, random_seed=args.seed)
+    destination = output_file(args, "acetylamido_IRMOF-1.cif")
+    child.write_cif(destination)
+    write_report(
+        out,
+        seed=args.seed,
+        parent_atoms=parent.n_atoms,
+        child_atoms=child.n_atoms,
+        locations=child.provenance.parameters["locations"],
+        output=destination,
+        validation=validate_structure(infer_bonds(child)).to_dict(),
+    )
 
 
 if __name__ == "__main__":
