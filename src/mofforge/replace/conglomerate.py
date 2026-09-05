@@ -102,7 +102,7 @@ def reassemble(crystal: Crystal) -> Crystal:
 
             # Compute displacement
             dx = frac_coords[p_ref] - frac_coords[p_unshifted]
-            n_dx = nearest_image(dx)
+            n_dx = nearest_image(dx, xtal.lattice)
             shift = dx - n_dx
 
             # Shift all atoms in this component

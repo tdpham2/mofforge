@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import warnings
 from dataclasses import dataclass
@@ -34,9 +35,7 @@ def get_r2p_alignment(
     """Compute the optimal rigid-body alignment of replacement onto parent."""
     n_align = len(r2p)
     if n_align < 2:
-        raise ValueError(
-            f"Need at least 2 alignment points, got {n_align}."
-        )
+        raise ValueError(f"Need at least 2 alignment points, got {n_align}.")
     if replacement.n_atoms == 0 or parent.n_atoms == 0:
         raise ValueError("Parent and replacement must each have at least 1 atom.")
 
@@ -104,9 +103,6 @@ def apply_alignment(
 
     # Build new Crystal with parent's lattice
     # Use clean species for pymatgen, keep original labels separately
-    from mofforge.core.crystal import _clean_species
-
-    clean_species = [_clean_species(s) for s in replacement.species]
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -114,8 +110,10 @@ def apply_alignment(
 
         new_structure = Structure(
             parent.lattice,
-            clean_species,
+            [site.species for site in replacement.structure],
             frac_aligned,
+            site_properties=copy.deepcopy(replacement.structure.site_properties),
+            properties=copy.deepcopy(replacement.structure.properties),
         )
 
     aligned = Crystal(
@@ -123,6 +121,7 @@ def apply_alignment(
         structure=new_structure,
         bonds=replacement.bonds.copy(),
         species_labels=replacement.species,
+        provenance=copy.deepcopy(replacement.provenance),
     )
 
     return aligned

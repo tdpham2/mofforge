@@ -6,9 +6,19 @@ import numpy as np
 from pymatgen.core import Lattice
 
 
-def nearest_image(dx: np.ndarray) -> np.ndarray:
-    """Shift a fractional displacement vector to its nearest image in [-0.5, 0.5)."""
-    return dx - np.round(dx)
+def nearest_image(dx: np.ndarray, lattice: Lattice | None = None) -> np.ndarray:
+    """Return the closest fractional displacement for the supplied lattice.
+
+    Without a lattice, retain component-wise wrapping for compatibility. This
+    is a geometric minimum image only for orthogonal cells.
+    """
+    dx = np.asarray(dx, dtype=float)
+    if lattice is None:
+        return dx - np.round(dx)
+    if dx.ndim == 1:
+        _, image = lattice.get_distance_and_image(np.zeros(3), dx)
+        return dx + image
+    return np.array([nearest_image(row, lattice) for row in dx])
 
 
 def wrap_coords(xf: np.ndarray) -> np.ndarray:
@@ -22,9 +32,7 @@ def min_image_distance(
     lattice: Lattice,
 ) -> float:
     """Compute the minimum image distance between two fractional coordinate points."""
-    dx_frac = nearest_image(xf1 - xf2)
-    dx_cart = lattice.get_cartesian_coords(dx_frac)
-    return float(np.linalg.norm(dx_cart))
+    return float(lattice.get_distance_and_image(xf1, xf2)[0])
 
 
 def is_cross_boundary(
