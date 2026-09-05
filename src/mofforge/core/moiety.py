@@ -49,6 +49,15 @@ def subtract_anchor(crystal: Crystal) -> Crystal:
     return crystal[keep]
 
 
+def resolve_fragment_path(name: str, fragment_path: str | Path | None = None) -> Path:
+    """Resolve the same source file for loading and input identity capture."""
+    if fragment_path is None:
+        fragment_path = config.moiety_path
+    if fragment_path is None:
+        raise ValueError("No fragment path configured.")
+    return Path(fragment_path) / name
+
+
 def fragment(
     name: str | None,
     fragment_path: str | Path | None = None,
@@ -64,11 +73,7 @@ def fragment(
         return Crystal.empty(name="nothing")
 
     # Resolve file path
-    if fragment_path is None:
-        fragment_path = config.moiety_path
-    if fragment_path is None:
-        raise ValueError("No fragment path configured.")
-    filepath = Path(fragment_path) / name
+    filepath = resolve_fragment_path(name, fragment_path)
 
     # Read XYZ file
     species_list, cart_coords = read_xyz(filepath)

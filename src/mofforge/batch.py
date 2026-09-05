@@ -13,7 +13,14 @@ import yaml
 
 from mofforge.core.bonding import infer_bonds
 from mofforge.core.crystal import Crystal
-from mofforge.core.moiety import fragment
+from mofforge.core.moiety import fragment, resolve_fragment_path
+from mofforge.inputs import (
+    changed_inputs,
+    describe_inputs,
+    parameter_defaults,
+    scientific_settings,
+    use_scientific_settings,
+)
 from mofforge.provenance import (
     content_hash,
     derive_seed,
@@ -52,6 +59,8 @@ class BatchConfig:
     parallel: int = 0
     moiety_path: str | None = None
     random_seed: int | None = None
+    scientific_snapshot: dict | None = field(default=None, repr=False)
+    resolved_moiety_path: str | None = field(default=None, repr=False)
 
     _VALID_FORMATS = ("cif", "xyz")
 
@@ -137,54 +146,116 @@ def _resolve_parent_paths(patterns: list[str]) -> list[Path]:
 _VALID_OP_TYPES = ("replace", "remove", "validate", "desolvate")
 
 
+def _describe_batch_inputs(parent_path: Path, config: BatchConfig, settings: dict) -> dict:
+    """Capture consumed files and the effective options used by this batch."""
+    from mofforge.solvent.removal import remove_solvent
+
+    files = {"parent": parent_path}
+    # Retain the 0.2 seed derivation so existing seeded geometries do not change.
+    seed_identity = [
+        str(parent_path.resolve()),
+        file_hash(parent_path),
+        config.operations,
+        config.random_seed,
+        config.moiety_path,
+        config.output_format,
+    ]
+    operations = []
+    for index, op in enumerate(config.operations):
+        kind = op.get("type", "")
+        if kind not in _VALID_OP_TYPES:
+            raise ValueError(f"unknown operation type '{kind}'")
+        entry = {"type": kind}
+        if kind in {"replace", "remove"}:
+            names = (
+                {"query": op.get("query"), "replacement": op.get("replacement")}
+                if kind == "replace"
+                else {"guest": op.get("guest") or op.get("query")}
+            )
+            for role, name in names.items():
+                key = f"operations.{index}.{role}"
+                entry[role] = key if name is not None else None
+                if name is not None:
+                    files[key] = resolve_fragment_path(
+                        name, config.resolved_moiety_path or config.moiety_path
+                    )
+            options = parameter_defaults(replace_pattern, "name", "verbose", "random_seed")
+            mode = op.get("mode", "all_optimal") if kind == "replace" else "all_optimal"
+            if mode == "random":
+                options["random"] = True
+            elif mode.startswith("nb_loc_"):
+                options["nb_loc"] = int(mode.split("_")[-1])
+            elif mode != "all_optimal":
+                raise ValueError(f"Unknown replacement mode: {mode}")
+            options["random_seed"] = effective_seed(
+                op.get("random_seed", derive_seed(config.random_seed, [seed_identity, index]))
+            )
+            entry["options"] = options
+        elif kind == "desolvate":
+            entry["options"] = {
+                **parameter_defaults(remove_solvent),
+                **{k: v for k, v in op.items() if k != "type"},
+            }
+        else:
+            entry["options"] = {
+                **settings["validation"],
+                **{k: v for k, v in op.items() if k != "type"},
+            }
+        operations.append(entry)
+    return describe_inputs(
+        "batch",
+        {
+            "operations": operations,
+            "random_seed": config.random_seed,
+            "seed_strategy": "batch-v1",
+            "output_format": config.output_format,
+            "fragment_options": {"presort": True, "periodic": False},
+            "final_validation": settings["validation"],
+        },
+        files,
+        settings=settings,
+    )
+
+
 def _process_single(
     parent_path: Path,
     config: BatchConfig,
 ) -> BatchResult:
     """Process a single parent structure through all operations."""
+    settings = config.scientific_snapshot or scientific_settings()
+    with use_scientific_settings(settings):
+        return _execute_single(parent_path, config, settings)
+
+
+def _execute_single(parent_path: Path, config: BatchConfig, settings: dict) -> BatchResult:
     parent_name = parent_path.stem
     result = BatchResult(parent_name=parent_name)
 
     try:
+        descriptor = _describe_batch_inputs(parent_path, config, settings)
+        # Keep source-instance filenames distinct when identical inputs occur
+        # at two locations. The descriptor itself excludes file locations.
+        result.run_id = content_hash([descriptor["identity_sha256"], str(parent_path.resolve())])[
+            :12
+        ]
         current = Crystal.from_cif(parent_path)
         current = infer_bonds(current, periodic=True)
 
-        identity = [
-            str(parent_path.resolve()),
-            file_hash(parent_path),
-            config.operations,
-            config.random_seed,
-            config.moiety_path,
-            config.output_format,
-        ]
-        result.run_id = content_hash(identity)[:12]
         for step_index, op in enumerate(config.operations):
             op_type = op.get("type", "")
+            effective_op = descriptor["parameters"]["operations"][step_index]
+            options = effective_op["options"]
 
             if op_type not in _VALID_OP_TYPES:
                 raise ValueError(f"unknown operation type '{op_type}'")
 
             if op_type == "replace":
-                query_name = op.get("query")
-                replacement_name = op.get("replacement")
-                mode = op.get("mode", "all_optimal")
-
-                q = fragment(query_name, fragment_path=config.moiety_path)
-                r = fragment(replacement_name, fragment_path=config.moiety_path)
+                root = config.resolved_moiety_path or config.moiety_path
+                q = fragment(op.get("query"), fragment_path=root)
+                r = fragment(op.get("replacement"), fragment_path=root)
 
                 match = find_pattern(q, current)
-                kwargs = {}
-                if mode == "random":
-                    kwargs["random"] = True
-                elif mode.startswith("nb_loc_"):
-                    kwargs["nb_loc"] = int(mode.split("_")[-1])
-
-                if mode not in {"all_optimal", "random"} and not mode.startswith("nb_loc_"):
-                    raise ValueError(f"Unknown replacement mode: {mode}")
-                kwargs["random_seed"] = op.get(
-                    "random_seed", derive_seed(config.random_seed, [identity, step_index])
-                )
-                current = replace_pattern(match, r, **kwargs)
+                current = replace_pattern(match, r, **options)
 
                 # Re-infer bonds for subsequent steps
                 if current.n_bonds == 0 and current.n_atoms > 0:
@@ -192,9 +263,11 @@ def _process_single(
 
             elif op_type == "remove":
                 guest_name = op.get("guest") or op.get("query")
-                g = fragment(guest_name, fragment_path=config.moiety_path)
+                g = fragment(
+                    guest_name, fragment_path=config.resolved_moiety_path or config.moiety_path
+                )
                 match = find_pattern(g, current, disconnected_component=True)
-                current = replace_pattern(match, None)
+                current = replace_pattern(match, None, **options)
 
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)
@@ -202,27 +275,30 @@ def _process_single(
             elif op_type == "desolvate":
                 from mofforge.solvent.removal import remove_solvent
 
-                kwargs = {k: v for k, v in op.items() if k != "type"}
-                sol_result = remove_solvent(current, **kwargs)
+                sol_result = remove_solvent(current, **options)
                 current = sol_result.crystal
 
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)
 
             elif op_type == "validate":
-                report = validate_structure(current, **{k: v for k, v in op.items() if k != "type"})
+                report = validate_structure(current, **options)
                 result.validation = report
                 record_operation(current, current, "validate", op, validation=report)
 
         # Always describe the final artifact, even if validation also appeared
         # earlier in the pipeline.
-        result.validation = validate_structure(current)
+        result.validation = validate_structure(current, **settings["validation"])
+        input_errors = changed_inputs(descriptor)
+        if input_errors:
+            raise ValueError(" ".join(input_errors))
         record_operation(
             current,
             current,
             "batch_result",
             {"run_id": result.run_id, "random_seed": config.random_seed},
             validation=result.validation,
+            input_descriptor=descriptor,
         )
         # Write output
         output_dir = Path(config.output_dir)
@@ -250,6 +326,11 @@ def run_batch(config_path: str | Path) -> list[BatchResult]:
     """Run batch processing from a YAML configuration file."""
     config = BatchConfig.from_yaml(config_path)
     config.random_seed = effective_seed(config.random_seed)
+    config.scientific_snapshot = scientific_settings()
+    from mofforge.utils.config import config as global_config
+
+    root = config.moiety_path if config.moiety_path is not None else global_config.moiety_path
+    config.resolved_moiety_path = str(Path(root).resolve()) if root is not None else None
     parent_paths = _resolve_parent_paths(config.parent_paths)
 
     if not parent_paths:
