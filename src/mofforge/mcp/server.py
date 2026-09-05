@@ -54,7 +54,6 @@ def _tool(
     return decorator
 
 
-
 def _resolve_output(path: str) -> str:
     """Ensure output path is absolute and parent directory exists."""
     p = Path(path)
@@ -82,7 +81,6 @@ def _load_fragment(xyz_path: str):
 
     p = Path(xyz_path)
     return load_fragment(p.name, fragment_path=str(p.parent))
-
 
 
 @_tool(
@@ -144,6 +142,7 @@ def mofforge_replace(
     nb_loc: int = 0,
     use_random: bool = False,
     validate: bool = False,
+    random_seed: int | None = None,
 ) -> str:
     """Find and replace a fragment in a crystal.
 
@@ -173,7 +172,7 @@ def mofforge_replace(
 
     result = find_pattern(query, xtal)
 
-    kwargs = {"verbose": False}
+    kwargs = {"verbose": False, "random_seed": random_seed, "nb_loc": nb_loc}
     if nb_loc > 0:
         kwargs["nb_loc"] = nb_loc
     if use_random:
@@ -199,13 +198,10 @@ def mofforge_replace(
 
         child = infer_bonds(child, periodic=True)
         report = validate_structure(child)
-        response["validation"] = {
-            "is_valid": report.is_valid,
-            "steric_clashes": len(report.steric_clashes),
-            "unusual_bonds": len(report.unusual_bonds),
-            "coordination_issues": len(report.coordination_issues),
-            "summary": report.summary(),
-        }
+        from mofforge.provenance import write_manifest
+
+        response["validation"] = report.to_dict()
+        write_manifest(child, output_path, validation=report)
 
     return json.dumps(response, indent=2)
 
@@ -346,27 +342,10 @@ def mofforge_validate(
     check_coordination : bool
         Check metal coordination numbers.
     """
-    from mofforge.validation import validate_structure
-
-    xtal = _load_crystal(cif_path, with_bonds=True)
-    report = validate_structure(
-        xtal,
-        check_clashes=check_clashes,
-        check_bonds=check_bonds,
-        check_coordination=check_coordination,
-    )
+    from mofforge.mcp._impl import validate_impl
 
     return json.dumps(
-        {
-            "success": True,
-            "is_valid": report.is_valid,
-            "steric_clashes": len(report.steric_clashes),
-            "unusual_bonds": len(report.unusual_bonds),
-            "coordination_issues": len(report.coordination_issues),
-            "warnings": report.warnings,
-            "summary": report.summary(),
-        },
-        indent=2,
+        validate_impl(cif_path, check_clashes, check_bonds, check_coordination), indent=2
     )
 
 
@@ -499,47 +478,9 @@ def mofforge_build(
     output_dir : str
         Output directory for CIF files.
     """
-    from mofforge.build import MOFBuilder
+    from mofforge.mcp._impl import build_impl
 
-    try:
-        builder = MOFBuilder(backend=backend)
-    except Exception as exc:
-        return json.dumps(
-            {
-                "success": False,
-                "error": f"Failed to initialize {backend} backend: {exc}",
-            },
-            indent=2,
-        )
-
-    for n in node_files or []:
-        builder.add_node(n)
-    for e in edge_files or []:
-        builder.add_edge(e)
-
-    out = _resolve_output(os.path.join(output_dir, "placeholder.cif"))
-    out_dir = str(Path(out).parent)
-
-    result = builder.build(topology=topology, output_dir=out_dir)
-
-    if result.success:
-        response = {
-            "success": True,
-            "topology": topology,
-            "backend": backend,
-            "elapsed_seconds": result.elapsed_seconds,
-            "output_paths": [str(p) for p in result.output_paths],
-            "atoms": result.crystal.n_atoms if result.crystal else None,
-        }
-    else:
-        response = {
-            "success": False,
-            "topology": topology,
-            "backend": backend,
-            "errors": result.errors,
-        }
-
-    return json.dumps(response, indent=2)
+    return json.dumps(build_impl(topology, backend, node_files, edge_files, output_dir), indent=2)
 
 
 @_tool(
@@ -635,7 +576,6 @@ def mofforge_list_building_blocks(
             },
             indent=2,
         )
-
 
 
 @_tool(
@@ -1200,10 +1140,7 @@ def build_server(
 ) -> FastMCP:
     """Construct a stock FastMCP server with a startup-time tool selection."""
     all_names = [registration.name for registration in _TOOL_REGISTRY]
-    requirements = {
-        registration.name: registration.capability
-        for registration in _TOOL_REGISTRY
-    }
+    requirements = {registration.name: registration.capability for registration in _TOOL_REGISTRY}
     selected = select_tool_names(
         all_names,
         requirements,
@@ -1281,11 +1218,8 @@ def main():
         selected_server.run(transport="stdio")
     else:
         # FastMCP's transport enum expects the dash form; normalize.
-        mcp.settings.host = args.host
-        mcp.settings.port = args.port
-        mcp.run(transport="streamable-http")
+        selected_server.settings.host = args.host
         selected_server.run(transport="streamable-http")
-
 
 
 if __name__ == "__main__":

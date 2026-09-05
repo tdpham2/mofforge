@@ -11,6 +11,7 @@ import numpy as np
 from mofforge.core.bonding import infer_bonds, remove_bonds
 from mofforge.core.crystal import Crystal
 from mofforge.core.moiety import anchor_indices, fragment, untag_anchor
+from mofforge.provenance import effective_seed, record_operation, structure_hash
 from mofforge.replace.alignment import Alignment, apply_alignment, get_r2p_alignment
 from mofforge.search.search import MatchResult, find_pattern
 from mofforge.utils.periodic import is_cross_boundary, wrap_coords
@@ -31,6 +32,8 @@ class Installation:
     aligned_replacement: Crystal
     q2p: dict[int, int]
     r2p: dict[int, int]
+    orientation: int = 0
+    alignment_error: float = 0.0
 
 
 def _find_query_in_replacement(
@@ -58,9 +61,7 @@ def _find_query_in_replacement(
     q_in_r = find_pattern(query_unmasked, replacement)
 
     if q_in_r.nb_locations() == 0:
-        raise ValueError(
-            f"Query atoms not found in replacement '{replacement.name}'."
-        )
+        raise ValueError(f"Query atoms not found in replacement '{replacement.name}'.")
 
     # Take the first isomorphism.
     # query_unmasked was created via __getitem__ which renumbers indices to
@@ -71,7 +72,7 @@ def _find_query_in_replacement(
             f"Unexpected isomorphism keys: expected {{0..{nb_not_masked - 1}}}, "
             f"got {set(first_isom.keys())}. This indicates a bug in index renumbering."
         )
-    q2r = {q: first_isom[q] for q in range(nb_not_masked)}
+    q2r = {unmasked_indices[q]: first_isom[q] for q in range(nb_not_masked)}
     return q2r
 
 
@@ -133,6 +134,8 @@ def optimal_replacement(
         aligned_replacement=aligned_rep,
         q2p=isomorphisms[loc_id][best_ori],
         r2p=best_r2p,
+        orientation=best_ori,
+        alignment_error=best_alignment.error,
     )
 
 
@@ -201,6 +204,8 @@ def install_replacements(
     unique_obsolete = sorted(set(obsolete_atoms))
     keep = [i for i in range(child.n_atoms) if i not in unique_obsolete]
     child = child[keep]
+    child.name = name
+    child.refresh_bond_geometry()
 
     return child
 
@@ -232,6 +237,17 @@ def effect_replacements(
 
     # Install into parent
     child = install_replacements(match.parent, installations, name)
+
+    record = record_operation(
+        child,
+        match.parent,
+        "prepare_replacements",
+        {
+            "locations": [loc_id for loc_id, _ in configs],
+            "orientations": [installation.orientation for installation in installations],
+        },
+    )
+    record.alignment_errors = [installation.alignment_error for installation in installations]
 
     # Fix cross_boundary edge attributes for edges with None/unknown
     _fix_cross_boundary_attrs(child)
@@ -271,6 +287,7 @@ def replace_pattern(
     reinfer_bonds: bool = False,
     wrap: bool = True,
     auto_supercell: bool = False,
+    random_seed: int | None = None,
 ) -> Crystal:
     """Replace substructures of match.parent matching match.query with replacement.
 
@@ -283,6 +300,8 @@ def replace_pattern(
         - ``loc=[...]``: specific locations.
         - ``loc=[...], ori=[...]``: specific location+orientation pairs.
     """
+    random_seed = effective_seed(random_seed)
+    rng = pyrandom.Random(random_seed)
     # Handle None replacement
     if replacement is None:
         replacement = fragment(None)
@@ -304,7 +323,7 @@ def replace_pattern(
         loc = list(valid_locs)
         nb_loc = len(loc)
         if random:
-            ori = [pyrandom.randint(0, ori_counts[i] - 1) for i in loc]
+            ori = [rng.randint(0, ori_counts[i] - 1) for i in loc]
             if verbose:
                 logger.info("Replacing: random ori @ all %d loc", nb_loc)
         else:
@@ -314,9 +333,9 @@ def replace_pattern(
 
     elif nb_loc > 0 and not loc and not ori:
         # Random locations
-        loc = pyrandom.sample(valid_locs, min(nb_loc, len(valid_locs)))
+        loc = rng.sample(valid_locs, min(nb_loc, len(valid_locs)))
         if random:
-            ori = [pyrandom.randint(0, ori_counts[i] - 1) for i in loc]
+            ori = [rng.randint(0, ori_counts[i] - 1) for i in loc]
             if verbose:
                 logger.info("Replacing: random ori @ %d random loc", nb_loc)
         else:
@@ -329,12 +348,13 @@ def replace_pattern(
         if len(loc) != len(ori):
             raise ValueError("One orientation per location required")
         # Validate location and orientation indices
-        for l, o in zip(loc, ori):
-            if l < 0 or l >= n_locations:
-                raise ValueError(f"Location index {l} out of range (0..{n_locations - 1}).")
-            if o is not None and (o < 0 or o >= ori_counts[l]):
+        for location, o in zip(loc, ori, strict=True):
+            if location < 0 or location >= n_locations:
+                raise ValueError(f"Location index {location} out of range (0..{n_locations - 1}).")
+            if o is not None and (o < 0 or o >= ori_counts[location]):
                 raise ValueError(
-                    f"Orientation index {o} out of range for location {l} (0..{ori_counts[l] - 1})."
+                    f"Orientation index {o} out of range for location {location} "
+                    f"(0..{ori_counts[location] - 1})."
                 )
         nb_loc = len(loc)
         if verbose:
@@ -343,14 +363,14 @@ def replace_pattern(
     elif loc:
         # Specific locations, auto orientation
         # Validate location indices
-        for l in loc:
-            if l < 0 or l >= n_locations:
-                raise ValueError(f"Location index {l} out of range (0..{n_locations - 1}).")
-            if ori_counts[l] == 0:
-                raise ValueError(f"Location {l} has no orientations available.")
+        for location in loc:
+            if location < 0 or location >= n_locations:
+                raise ValueError(f"Location index {location} out of range (0..{n_locations - 1}).")
+            if ori_counts[location] == 0:
+                raise ValueError(f"Location {location} has no orientations available.")
         nb_loc = len(loc)
         if random:
-            ori = [pyrandom.randint(0, ori_counts[i] - 1) for i in loc]
+            ori = [rng.randint(0, ori_counts[i] - 1) for i in loc]
             if verbose:
                 logger.info("Replacing: random ori @ loc=%s", loc)
         else:
@@ -361,6 +381,8 @@ def replace_pattern(
     # Note: pymatgen stores partial charges on Species objects, not on
     # PeriodicSite.  Charge transfer during replacement is not supported.
 
+    if nb_loc < 0:
+        raise ValueError("nb_loc must be nonnegative.")
     # Generate configuration tuples
     configs = [(loc[i], ori[i]) for i in range(len(loc))]
 
@@ -390,6 +412,30 @@ def replace_pattern(
         child = remove_bonds(child)
         child = infer_bonds(child, periodic_boundaries)
 
+    child.name = name
+    child.refresh_bond_geometry()
+    installed = child.provenance
+    record = record_operation(
+        child,
+        match.parent,
+        "remove" if replacement.n_atoms == 0 else "replace",
+        {
+            "query": match.query.name,
+            "replacement": replacement.name,
+            "query_hash": structure_hash(match.query),
+            "replacement_hash": structure_hash(replacement),
+            "random_seed": random_seed,
+            "random": random,
+            "locations": installed.parameters["locations"],
+            "orientations": installed.parameters["orientations"],
+            "wrap": wrap,
+            "reinfer_bonds": reinfer_bonds,
+            "remove_duplicates": remove_duplicates,
+            "auto_supercell": auto_supercell,
+            "periodic_boundaries": periodic_boundaries,
+        },
+    )
+    record.alignment_errors = list(installed.alignment_errors)
     return child
 
 

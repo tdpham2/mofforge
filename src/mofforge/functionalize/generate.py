@@ -34,6 +34,7 @@ from mofforge.build.smiles_to_bb import _ensure_rdkit
 from mofforge.functionalize.groups import FunctionalGroup, get_group
 from mofforge.functionalize.sites import find_functionalizable_sites
 from mofforge.io.xyz import write_xyz
+from mofforge.provenance import effective_seed, write_generation_manifest
 from mofforge.utils.config import config
 
 logger = logging.getLogger("mofforge")
@@ -66,7 +67,7 @@ def _aromatic_ring_system(mol, seed_atom: int) -> set[int]:
     return system
 
 
-def _build_core(mol, site_atoms: list[int], group: FunctionalGroup | None):
+def _build_core(mol, site_atoms: list[int], group: FunctionalGroup | None, random_seed=None):
     """Build an embedded RDKit mol of the ring core.
 
     Parameters
@@ -110,8 +111,7 @@ def _build_core(mol, site_atoms: list[int], group: FunctionalGroup | None):
             atom.SetProp(_PROP_KEEP, "1")
             atom.SetProp(_PROP_SITE, "1" if idx in site_set else "0")
             is_connection = any(
-                nbr.GetIdx() not in system and nbr.GetAtomicNum() > 1
-                for nbr in atom.GetNeighbors()
+                nbr.GetIdx() not in system and nbr.GetAtomicNum() > 1 for nbr in atom.GetNeighbors()
             )
             atom.SetProp(_PROP_CONNECTION, "1" if is_connection else "0")
         else:
@@ -146,14 +146,16 @@ def _build_core(mol, site_atoms: list[int], group: FunctionalGroup | None):
     mol_h = Chem.AddHs(core)
 
     params = AllChem.ETKDGv3()
+    params.randomSeed = random_seed if random_seed is not None else -1
     if AllChem.EmbedMolecule(mol_h, params) != 0:
         params.useRandomCoords = True
         if AllChem.EmbedMolecule(mol_h, params) != 0:
             raise ValueError("RDKit could not generate 3-D coordinates for the core.")
     try:
-        AllChem.UFFOptimizeMolecule(mol_h, maxIters=2000)
-    except Exception:
-        logger.warning("UFF optimisation failed for core; using embedded coords")
+        if AllChem.UFFOptimizeMolecule(mol_h, maxIters=2000) != 0:
+            raise ValueError("UFF geometry optimization did not converge.")
+    except Exception as exc:
+        raise ValueError("UFF geometry optimization failed.") from exc
 
     site_atom_map: dict[int, int] = {}
     connection_atoms: set[int] = set()
@@ -232,6 +234,7 @@ def make_query_replacement(
     group: str,
     output_dir: str | Path | None = None,
     r_tag: str | None = None,
+    random_seed: int | None = None,
 ) -> tuple[Path, Path]:
     """Generate an anchor-tagged query/replacement XYZ pair for the pipeline.
 
@@ -258,6 +261,7 @@ def make_query_replacement(
     (query_path, replacement_path)
         Paths to the generated query and replacement XYZ files.
     """
+    random_seed = effective_seed(random_seed)
     _ensure_rdkit()
     from rdkit import Chem
 
@@ -282,8 +286,7 @@ def make_query_replacement(
     for i in sites:
         if i not in by_index:
             raise ValueError(
-                f"Site index {i} not found. Valid indices: "
-                f"{[s.index for s in all_sites]}"
+                f"Site index {i} not found. Valid indices: {[s.index for s in all_sites]}"
             )
         site_atoms.append(by_index[i].atom_idx)
 
@@ -293,7 +296,7 @@ def make_query_replacement(
     site_tag = "-".join(str(i) for i in sites)
 
     # --- Query ---------------------------------------------------------------
-    q_mol, q_site_map, q_conn = _build_core(mol, site_atoms, group=None)
+    q_mol, q_site_map, q_conn = _build_core(mol, site_atoms, group=None, random_seed=random_seed)
     q_species, q_coords = _fragment_to_xyz(
         q_mol, list(q_site_map.values()), q_conn, tag_sites=True, r_tag=r_tag
     )
@@ -301,14 +304,12 @@ def make_query_replacement(
     write_xyz(q_species, q_coords, query_path, comment=f"query sites={sites}")
 
     # --- Replacement ---------------------------------------------------------
-    r_mol, r_site_map, r_conn = _build_core(mol, site_atoms, group=fg)
+    r_mol, r_site_map, r_conn = _build_core(mol, site_atoms, group=fg, random_seed=random_seed)
     r_species, r_coords = _fragment_to_xyz(
         r_mol, list(r_site_map.values()), r_conn, tag_sites=False, r_tag=r_tag
     )
     replacement_path = out_dir / f"replacement_{group}_site{site_tag}.xyz"
-    write_xyz(
-        r_species, r_coords, replacement_path, comment=f"{group} at sites={sites}"
-    )
+    write_xyz(r_species, r_coords, replacement_path, comment=f"{group} at sites={sites}")
 
     logger.debug(
         "Generated fragments: query=%s (%d atoms), replacement=%s (%d atoms)",
@@ -317,4 +318,17 @@ def make_query_replacement(
         replacement_path,
         len(r_species),
     )
+    for path, role in ((query_path, "query"), (replacement_path, "replacement")):
+        write_generation_manifest(
+            path,
+            "generate_fragment",
+            {
+                "linker_smiles": linker_smiles,
+                "sites": sites,
+                "group": group,
+                "random_seed": random_seed,
+                "r_tag": r_tag,
+                "role": role,
+            },
+        )
     return query_path, replacement_path

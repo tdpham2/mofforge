@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import networkx as nx
 import numpy as np
 
+from mofforge.core.crystal import PeriodicBond
 from mofforge.utils.config import config
 from mofforge.utils.periodic import is_cross_boundary
 
@@ -142,6 +143,11 @@ def infer_bonds(
     bonds = nx.Graph()
     n = xtal.n_atoms
     species_list = xtal.species
+    if not xtal.structure.is_ordered:
+        raise ValueError(
+            "Bond inference requires an ordered structure; resolve partial occupancies first."
+        )
+    xtal.periodic_bonds = [] if periodic else None
 
     for i in range(n):
         bonds.add_node(i, species=species_list[i])
@@ -166,21 +172,26 @@ def infer_bonds(
         for i, neighbors in enumerate(all_neighbors):
             sp_i = species_list[i]
             for neighbor in neighbors:
-                j = neighbor.index
-                if j <= i:
+                j = int(neighbor.index)
+                image = tuple(int(x) for x in neighbor.image)
+                if j < i or (j == i and image <= (0, 0, 0)):
                     continue  # avoid duplicate edges
                 dist = neighbor.nn_distance
                 sp_j = species_list[j]
 
                 max_dist = _get_max_bond_dist(sp_i, sp_j, rule_lookup)
                 if max_dist is not None and dist <= max_dist:
+                    xtal.periodic_bonds.append(PeriodicBond(i, j, image, float(dist)))
+                    if i == j:
+                        continue  # self-images are kept outside the search graph
                     cross_pb = is_cross_boundary(
                         frac_coords[i],
                         frac_coords[j],
                         lattice,
                         dist,
                     )
-                    bonds.add_edge(i, j, distance=dist, cross_boundary=cross_pb)
+                    if not bonds.has_edge(i, j) or dist < bonds[i][j]["distance"]:
+                        bonds.add_edge(i, j, distance=dist, cross_boundary=cross_pb, image=image)
     else:
         # Non-periodic: direct pairwise distance check
         cart = xtal.cart_coords
@@ -209,6 +220,7 @@ def remove_bonds(crystal: Crystal) -> Crystal:
     for i in range(xtal.n_atoms):
         new_bonds.add_node(i, species=species_list[i])
     xtal.bonds = new_bonds
+    xtal.periodic_bonds = None
     return xtal
 
 

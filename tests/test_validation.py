@@ -28,7 +28,9 @@ class TestValidation:
 
         # IRMOF-1 is a well-formed structure, should have no steric clashes
         # (though validation may find some depending on tolerance)
-        assert isinstance(report.is_valid, bool)
+        assert report.is_valid
+        assert not report.errors
+        assert not report.steric_clashes
 
     def test_validation_report_summary(self):
         """ValidationReport.summary() should return a string."""
@@ -36,7 +38,7 @@ class TestValidation:
 
         report = ValidationReport()
         assert isinstance(report.summary(), str)
-        assert report.is_valid
+        assert not report.is_valid  # a report without performed checks is not a pass
 
     def test_steric_clash_detection(self):
         """Two atoms very close should trigger a steric clash."""

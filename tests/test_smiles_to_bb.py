@@ -13,14 +13,13 @@ import pytest
 
 rdkit = pytest.importorskip("rdkit", reason="rdkit is required for these tests")
 
-from mofforge.build.smiles_to_bb import (
+from mofforge.build.smiles_to_bb import (  # noqa: E402
     ConnectionInfo,
     detect_carboxylic_groups,
     detect_connection_points,
     smiles_to_pormake_edge_xyz,
     smiles_to_tobacco_edge_cif,
 )
-
 
 # ------------------------------------------------------------------ #
 # detect_connection_points
@@ -62,12 +61,12 @@ class TestDetectConnectionPoints:
     def test_wrong_carboxylate_count(self):
         """Should raise ValueError when carboxylate count != 2."""
         # Benzoic acid: only 1 carboxylate
-        with pytest.raises(ValueError, match="Expected 2.*found 1"):
+        with pytest.raises(ValueError, match=r"Expected 2.*found 1"):
             detect_connection_points("OC(=O)c1ccccc1")
 
     def test_three_carboxylates(self):
         """Trimesic acid (3 COOHs) should fail for n_points=2."""
-        with pytest.raises(ValueError, match="Expected 2.*found 3"):
+        with pytest.raises(ValueError, match=r"Expected 2.*found 3"):
             detect_connection_points("OC(=O)c1cc(C(=O)O)cc(C(=O)O)c1")
 
     # --- Direct mode ---------------------------------------------- #
@@ -148,8 +147,9 @@ class TestSmilesToTobaccoEdgeCif:
 
         # Should have exactly 2 X atoms with Fr type
         atom_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X") and "Fr" in l
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X") and "Fr" in cif_line
         ]
         assert len(atom_lines) == 2, f"Expected 2 Fr X atoms, got {len(atom_lines)}"
 
@@ -179,11 +179,12 @@ class TestSmilesToTobaccoEdgeCif:
         # Atom lines have many columns (label, symbol, fx, fy, fz, ...);
         # bond lines only have 5 columns.  Filter by column count.
         x_atom_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X")
-            and len(l.split()) > 5
-            and "Fr" not in l
-            and l.split()[1] == "C"
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X")
+            and len(cif_line.split()) > 5
+            and "Fr" not in cif_line
+            and cif_line.split()[1] == "C"
         ]
         # We expect exactly 2 X atoms with C type symbol
         assert len(x_atom_lines) == 2, f"Expected 2 X(C) atoms, got {len(x_atom_lines)}"
@@ -199,8 +200,11 @@ class TestSmilesToTobaccoEdgeCif:
         content = out.read_text()
         # Count H atoms: biphenyl has 10 H, we remove 2 (one per X)
         h_lines = [
-            l for l in content.splitlines()
-            if l.strip() and l.split()[0].startswith("H") and len(l.split()) > 5
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip()
+            and cif_line.split()[0].startswith("H")
+            and len(cif_line.split()) > 5
         ]
         assert len(h_lines) == 8, f"Expected 8 H atoms, got {len(h_lines)}"
 
@@ -217,8 +221,9 @@ class TestSmilesToTobaccoEdgeCif:
 
         # 2 X/Fr dummy atoms
         x_fr_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X") and "Fr" in l
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X") and "Fr" in cif_line
         ]
         assert len(x_fr_lines) == 2
 
@@ -231,8 +236,11 @@ class TestSmilesToTobaccoEdgeCif:
         # BDC: C6H4(COOH)2 has 4 ring H + 2 OH H = 6 H total.
         # After stripping carboxylate OH, we should have 4 H.
         h_lines = [
-            l for l in content.splitlines()
-            if l.strip() and l.split()[0].startswith("H") and len(l.split()) > 5
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip()
+            and cif_line.split()[0].startswith("H")
+            and len(cif_line.split()) > 5
         ]
         assert len(h_lines) == 4, f"Expected 4 H atoms after stripping COOH, got {len(h_lines)}"
 
@@ -247,9 +255,7 @@ class TestSmilesToTobaccoEdgeCif:
     def test_output_path_returned(self, tmp_path: Path):
         """Return value should be the resolved output path."""
         out = tmp_path / "sub" / "edge.cif"
-        result = smiles_to_tobacco_edge_cif(
-            "c1ccc(-c2ccccc2)cc1", output_path=out
-        )
+        result = smiles_to_tobacco_edge_cif("c1ccc(-c2ccccc2)cc1", output_path=out)
         assert result == out.resolve()
         assert result.exists()
 
@@ -348,8 +354,9 @@ class TestCarboxylicModeTobaccoCif:
 
         # Should have exactly 2 X atoms (the anchors).
         atom_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X") and len(l.split()) > 5
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X") and len(cif_line.split()) > 5
         ]
         assert len(atom_lines) == 2, f"Expected 2 X atoms, got {len(atom_lines)}"
 
@@ -376,23 +383,26 @@ class TestCarboxylicModeTobaccoCif:
         # Note: BDC anchor carbons are ring C with no H attached to them
         # (each has 2 ring-C neighbours and the carboxylate-C neighbour).
         atom_lines = [
-            l for l in content.splitlines()
-            if l.strip() and len(l.split()) > 5 and not l.strip().startswith("_")
-            and not l.strip().startswith("loop")
-            and not l.strip().startswith("data_")
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip()
+            and len(cif_line.split()) > 5
+            and not cif_line.strip().startswith("_")
+            and not cif_line.strip().startswith("loop")
+            and not cif_line.strip().startswith("data_")
         ]
         # Filter to only atom site lines (they have labels like C1, H2, X1)
         atom_lines = [
-            l for l in atom_lines
-            if l.split()[0][0].isalpha() and "." in l  # has fractional coords
-            and "Uiso" in l
+            cif_line
+            for cif_line in atom_lines
+            if cif_line.split()[0][0].isalpha()
+            and "." in cif_line  # has fractional coords
+            and "Uiso" in cif_line
         ]
-        assert len(atom_lines) == 10, (
-            f"Expected 10 atoms (4C + 2X + 4H), got {len(atom_lines)}"
-        )
+        assert len(atom_lines) == 10, f"Expected 10 atoms (4C + 2X + 4H), got {len(atom_lines)}"
 
         # No O atoms should remain.
-        o_lines = [l for l in atom_lines if l.split()[1] == "O"]
+        o_lines = [cif_line for cif_line in atom_lines if cif_line.split()[1] == "O"]
         assert len(o_lines) == 0, f"Expected 0 O atoms, got {len(o_lines)}"
 
     def test_bdc_carboxylic_atom_counts(self, tmp_path: Path):
@@ -413,6 +423,7 @@ class TestCarboxylicModeTobaccoCif:
                 atom_symbols.append(parts[1])
 
         from collections import Counter
+
         counts = Counter(atom_symbols)
         assert counts["C"] == 6, f"Expected 6 C-type atoms, got {counts.get('C', 0)}"
         assert counts["H"] == 4, f"Expected 4 H atoms, got {counts.get('H', 0)}"
@@ -433,8 +444,9 @@ class TestCarboxylicModeTobaccoCif:
 
         # 2 X atoms, no Fr.
         x_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X") and len(l.split()) > 5
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X") and len(cif_line.split()) > 5
         ]
         assert len(x_lines) == 2
         assert "Fr" not in content
@@ -452,13 +464,17 @@ class TestCarboxylicModeTobaccoCif:
         assert "data_BPDC_carboxylic" in content
 
         x_lines = [
-            l for l in content.splitlines()
-            if l.strip().startswith("X") and len(l.split()) > 5
+            cif_line
+            for cif_line in content.splitlines()
+            if cif_line.strip().startswith("X") and len(cif_line.split()) > 5
         ]
         assert len(x_lines) == 2
         assert "Fr" not in content
-        assert "O" not in [l.split()[1] for l in content.splitlines()
-                           if l.strip() and len(l.split()) > 5 and "Uiso" in l]
+        assert "O" not in [
+            cif_line.split()[1]
+            for cif_line in content.splitlines()
+            if cif_line.strip() and len(cif_line.split()) > 5 and "Uiso" in cif_line
+        ]
 
     def test_carboxylic_no_cooh_raises(self, tmp_path: Path):
         """Molecule without COOH should raise ValueError in carboxylic mode."""
@@ -564,7 +580,7 @@ class TestSmilesToPormakeEdgeXyz:
         assert result == out
         assert out.exists()
 
-        atoms, bonds, x_indices = _parse_pormake_xyz(out.read_text())
+        atoms, _bonds, x_indices = _parse_pormake_xyz(out.read_text())
 
         # Exactly 2 X atoms
         x_atoms = [(i, a) for i, a in enumerate(atoms) if a[0] == "X"]
@@ -594,7 +610,7 @@ class TestSmilesToPormakeEdgeXyz:
         assert result == out
         assert out.exists()
 
-        atoms, bonds, x_indices = _parse_pormake_xyz(out.read_text())
+        atoms, _bonds, _x_indices = _parse_pormake_xyz(out.read_text())
 
         x_atoms = [(i, a) for i, a in enumerate(atoms) if a[0] == "X"]
         assert len(x_atoms) == 2
@@ -617,7 +633,7 @@ class TestSmilesToPormakeEdgeXyz:
             x_pos = np.array(atoms[xi][1:4])
             # Find the atom bonded to this X
             bonded_idx = None
-            for i, j, bt in bonds:
+            for i, j, _bt in bonds:
                 if i == xi:
                     bonded_idx = j
                     break
@@ -634,7 +650,7 @@ class TestSmilesToPormakeEdgeXyz:
         out = tmp_path / "bond_type.xyz"
         smiles_to_pormake_edge_xyz("OC(=O)c1ccc(C(=O)O)cc1", output_path=out)
 
-        atoms, bonds, x_indices = _parse_pormake_xyz(out.read_text())
+        _atoms, bonds, x_indices = _parse_pormake_xyz(out.read_text())
         x_set = set(x_indices)
         for i, j, bt in bonds:
             if i in x_set or j in x_set:
@@ -647,7 +663,7 @@ class TestSmilesToPormakeEdgeXyz:
             "OC(=O)c1ccc2cc(C(=O)O)ccc2c1",
             output_path=out,
         )
-        atoms, bonds, x_indices = _parse_pormake_xyz(out.read_text())
+        atoms, _bonds, _x_indices = _parse_pormake_xyz(out.read_text())
         x_atoms = [a for a in atoms if a[0] == "X"]
         assert len(x_atoms) == 2
 
@@ -655,7 +671,7 @@ class TestSmilesToPormakeEdgeXyz:
         """Aromatic bonds should be labelled 'A' in the bond table."""
         out = tmp_path / "arom.xyz"
         smiles_to_pormake_edge_xyz("c1ccc(-c2ccccc2)cc1", output_path=out)
-        atoms, bonds, _ = _parse_pormake_xyz(out.read_text())
+        _atoms, bonds, _ = _parse_pormake_xyz(out.read_text())
         aromatic = [b for b in bonds if b[2] == "A"]
         assert len(aromatic) > 0, "Expected aromatic bonds in biphenyl"
 
@@ -672,7 +688,8 @@ class TestSmilesToPormakeEdgeXyz:
         """Should create parent directories if they don't exist."""
         out = tmp_path / "deep" / "nested" / "edge.xyz"
         result = smiles_to_pormake_edge_xyz(
-            "c1ccc(-c2ccccc2)cc1", output_path=out,
+            "c1ccc(-c2ccccc2)cc1",
+            output_path=out,
         )
         assert result == out.resolve()
         assert result.exists()

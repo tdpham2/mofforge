@@ -15,13 +15,15 @@ from typing import Literal
 
 import numpy as np
 
+from mofforge.provenance import effective_seed, write_generation_manifest
+
 logger = logging.getLogger("mofforge")
 
 _rdkit_loaded = False
 
 
 def _ensure_rdkit():
-    global _rdkit_loaded  # noqa: PLW0603
+    global _rdkit_loaded
     if _rdkit_loaded:
         return
     try:
@@ -40,7 +42,6 @@ _CARBOXYLATE_SMARTS = "[CX3](=[OX1])[OX1,OX2H1]"
 
 # Default cubic cell length (Angstrom) for the non-periodic CIF.
 _CELL_LENGTH = 40.0
-
 
 
 @dataclass
@@ -150,7 +151,7 @@ def _detect_direct_connection_points(
 
     # Find diameter endpoints via double BFS (faster than all-pairs).
     # Pick an arbitrary start, find the farthest node, then from that
-    # node find the farthest again – the two endpoints of the longest
+    # node find the farthest again - the two endpoints of the longest
     # shortest path.
     start = next(iter(G.nodes()))
     lengths_from_start = nx.single_source_shortest_path_length(G, start)
@@ -159,9 +160,7 @@ def _detect_direct_connection_points(
     v = max(lengths_from_u, key=lengths_from_u.get)
 
     if n_points != 2:
-        raise ValueError(
-            f"Direct mode currently supports n_points=2 only, got {n_points}"
-        )
+        raise ValueError(f"Direct mode currently supports n_points=2 only, got {n_points}")
 
     return ConnectionInfo(
         mode="direct",
@@ -192,8 +191,7 @@ def detect_carboxylic_groups(smiles: str) -> ConnectionInfo:
 
     if len(matches) != 2:
         raise ValueError(
-            f"Expected exactly 2 COOH/COO- groups but found "
-            f"{len(matches)} in SMILES: {smiles!r}"
+            f"Expected exactly 2 COOH/COO- groups but found {len(matches)} in SMILES: {smiles!r}"
         )
 
     groups: list[CarboxylateGroup] = []
@@ -229,6 +227,7 @@ def smiles_to_tobacco_edge_cif(
     cell_length: float = _CELL_LENGTH,
     uff_max_iters: int = 2000,
     mode: Literal["auto", "carboxylate", "direct", "carboxylic"] = "auto",
+    random_seed: int | None = None,
 ) -> Path:
     """Convert a SMILES string to a TOBACCO-format edge building-block CIF.
 
@@ -237,7 +236,7 @@ def smiles_to_tobacco_edge_cif(
     """
     _ensure_rdkit()
     from rdkit import Chem
-    from rdkit.Chem import AllChem, rdmolops
+    from rdkit.Chem import AllChem
 
     output_path = Path(output_path).resolve()
 
@@ -270,22 +269,23 @@ def smiles_to_tobacco_edge_cif(
     # atoms are unchanged.
 
     # Embed 3-D coordinates
-    embed_result = AllChem.EmbedMolecule(mol_h, AllChem.ETKDGv3())
+    random_seed = effective_seed(random_seed)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = random_seed if random_seed is not None else -1
+    embed_result = AllChem.EmbedMolecule(mol_h, params)
     if embed_result != 0:
         # Retry with random coordinates
-        params = AllChem.ETKDGv3()
         params.useRandomCoords = True
         embed_result = AllChem.EmbedMolecule(mol_h, params)
         if embed_result != 0:
-            raise ValueError(
-                f"RDKit could not generate 3-D coordinates for: {smiles!r}"
-            )
+            raise ValueError(f"RDKit could not generate 3-D coordinates for: {smiles!r}")
 
     # UFF optimisation
     try:
-        AllChem.UFFOptimizeMolecule(mol_h, maxIters=uff_max_iters)
-    except Exception:
-        logger.warning("UFF optimisation failed for %r; using embedded coords", smiles)
+        if AllChem.UFFOptimizeMolecule(mol_h, maxIters=uff_max_iters) != 0:
+            raise ValueError("UFF geometry optimization did not converge.")
+    except Exception as exc:
+        raise ValueError(f"UFF geometry optimization failed for {smiles!r}.") from exc
 
     conf = mol_h.GetConformer()
 
@@ -307,18 +307,32 @@ def smiles_to_tobacco_edge_cif(
         len(atoms),
         len(bonds),
     )
+    write_generation_manifest(
+        output_path,
+        "smiles_to_building_block",
+        {
+            "smiles": smiles,
+            "mode": mode,
+            "random_seed": random_seed,
+            "uff_max_iters": uff_max_iters,
+            "name": name,
+            "cell_length": cell_length,
+            "format": "tobacco_cif",
+        },
+    )
     return output_path
 
 
 # Small data carriers for CIF writing
 
+
 @dataclass
 class _CifAtom:
-    label: str          # e.g. "C1", "X3", "Fr7"
-    type_symbol: str    # element symbol written in _atom_site_type_symbol
-    fx: float           # fractional x
-    fy: float           # fractional y
-    fz: float           # fractional z
+    label: str  # e.g. "C1", "X3", "Fr7"
+    type_symbol: str  # element symbol written in _atom_site_type_symbol
+    fx: float  # fractional x
+    fy: float  # fractional y
+    fz: float  # fractional z
     charge: float = 0.0
 
 
@@ -368,8 +382,8 @@ def _center_positions(positions: np.ndarray, cell_length: float) -> np.ndarray:
 
 
 def _build_direct_edge(
-    mol_h,       # RDKit Mol with explicit Hs
-    conf,        # RDKit Conformer
+    mol_h,  # RDKit Mol with explicit Hs
+    conf,  # RDKit Conformer
     conn_info: ConnectionInfo,
     cell_length: float,
 ) -> tuple[list[_CifAtom], list[_CifBond]]:
@@ -385,9 +399,7 @@ def _build_direct_edge(
                 h_to_remove.add(nbr.GetIdx())
 
     # Collect surviving atom indices and their positions.
-    surviving = [
-        i for i in range(mol_h.GetNumAtoms()) if i not in h_to_remove
-    ]
+    surviving = [i for i in range(mol_h.GetNumAtoms()) if i not in h_to_remove]
 
     # Gather Cartesian positions for surviving atoms.
     positions = np.array([list(conf.GetAtomPosition(i)) for i in surviving])
@@ -431,13 +443,12 @@ def _build_direct_edge(
 
 
 def _build_carboxylate_edge(
-    mol_h,       # RDKit Mol with explicit Hs
-    conf,        # RDKit Conformer
+    mol_h,  # RDKit Mol with explicit Hs
+    conf,  # RDKit Conformer
     conn_info: ConnectionInfo,
     cell_length: float,
 ) -> tuple[list[_CifAtom], list[_CifBond]]:
     """Build atom/bond lists for a *carboxylate*-terminated edge."""
-    from rdkit import Chem
 
     # Collect all atom indices belonging to carboxylate groups.
     carboxylate_atom_set: set[int] = set()
@@ -454,9 +465,7 @@ def _build_carboxylate_edge(
                     h_to_remove.add(nbr.GetIdx())
 
     # Surviving atoms (original molecule atoms minus removed Hs).
-    surviving = [
-        i for i in range(mol_h.GetNumAtoms()) if i not in h_to_remove
-    ]
+    surviving = [i for i in range(mol_h.GetNumAtoms()) if i not in h_to_remove]
 
     # Gather positions for surviving atoms.
     positions = np.array([list(conf.GetAtomPosition(i)) for i in surviving])
@@ -508,8 +517,8 @@ def _build_carboxylate_edge(
 
 
 def _build_carboxylic_edge(
-    mol_h,       # RDKit Mol with explicit Hs
-    conf,        # RDKit Conformer
+    mol_h,  # RDKit Mol with explicit Hs
+    conf,  # RDKit Conformer
     conn_info: ConnectionInfo,
     cell_length: float,
 ) -> tuple[list[_CifAtom], list[_CifBond]]:
@@ -540,9 +549,7 @@ def _build_carboxylic_edge(
                 atoms_to_remove.add(nbr.GetIdx())
 
     # Surviving atom indices.
-    surviving = [
-        i for i in range(mol_h.GetNumAtoms()) if i not in atoms_to_remove
-    ]
+    surviving = [i for i in range(mol_h.GetNumAtoms()) if i not in atoms_to_remove]
 
     # Gather positions for surviving atoms, centred in the cell.
     positions = np.array([list(conf.GetAtomPosition(i)) for i in surviving])
@@ -641,10 +648,7 @@ def _write_tobacco_cif(
     lines.append("_ccdc_geom_bond_type")
 
     for b in bonds:
-        lines.append(
-            f"{b.label1:<10s} {b.label2:<10s} "
-            f"{b.distance:.5f}    .     {b.bond_type}"
-        )
+        lines.append(f"{b.label1:<10s} {b.label2:<10s} {b.distance:.5f}    .     {b.bond_type}")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
@@ -660,6 +664,7 @@ def smiles_to_pormake_edge_xyz(
     output_path: str | Path,
     uff_max_iters: int = 2000,
     mode: Literal["auto", "carboxylate", "direct", "carboxylic"] = "auto",
+    random_seed: int | None = None,
 ) -> Path:
     """Convert a SMILES string to a Pormake-format edge building-block XYZ.
 
@@ -692,35 +697,42 @@ def smiles_to_pormake_edge_xyz(
 
     mol_h = Chem.AddHs(mol)
 
-    embed_result = AllChem.EmbedMolecule(mol_h, AllChem.ETKDGv3())
+    random_seed = effective_seed(random_seed)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = random_seed if random_seed is not None else -1
+    embed_result = AllChem.EmbedMolecule(mol_h, params)
     if embed_result != 0:
-        params = AllChem.ETKDGv3()
         params.useRandomCoords = True
         embed_result = AllChem.EmbedMolecule(mol_h, params)
         if embed_result != 0:
-            raise ValueError(
-                f"RDKit could not generate 3-D coordinates for: {smiles!r}"
-            )
+            raise ValueError(f"RDKit could not generate 3-D coordinates for: {smiles!r}")
 
     try:
-        AllChem.UFFOptimizeMolecule(mol_h, maxIters=uff_max_iters)
-    except Exception:
-        logger.warning("UFF optimisation failed for %r; using embedded coords", smiles)
+        if AllChem.UFFOptimizeMolecule(mol_h, maxIters=uff_max_iters) != 0:
+            raise ValueError("UFF geometry optimization did not converge.")
+    except Exception as exc:
+        raise ValueError(f"UFF geometry optimization failed for {smiles!r}.") from exc
 
     conf = mol_h.GetConformer()
 
     # ---- 2. Build atom/bond lists depending on mode ---------------------- #
     if conn_info.mode == "carboxylic":
         xyz_atoms, xyz_bonds, x_indices = _build_pormake_carboxylic_edge(
-            mol_h, conf, conn_info,
+            mol_h,
+            conf,
+            conn_info,
         )
     elif conn_info.mode == "carboxylate":
         xyz_atoms, xyz_bonds, x_indices = _build_pormake_carboxylate_edge(
-            mol_h, conf, conn_info,
+            mol_h,
+            conf,
+            conn_info,
         )
     else:
         xyz_atoms, xyz_bonds, x_indices = _build_pormake_direct_edge(
-            mol_h, conf, conn_info,
+            mol_h,
+            conf,
+            conn_info,
         )
 
     # ---- 3. Write XYZ ---------------------------------------------------- #
@@ -733,8 +745,17 @@ def smiles_to_pormake_edge_xyz(
         len(xyz_atoms),
         len(xyz_bonds),
     )
+    write_generation_manifest(
+        output_path,
+        "smiles_to_building_block",
+        {
+            "smiles": smiles,
+            "mode": mode,
+            "random_seed": random_seed,
+            "uff_max_iters": uff_max_iters,
+        },
+    )
     return output_path
-
 
 
 @dataclass

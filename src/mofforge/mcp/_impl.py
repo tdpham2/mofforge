@@ -237,17 +237,14 @@ def lookup_mof_impl(
 
         csd_db = get_csd_db(data_path=csd_data_path)
         coremof_db = get_coremof_db(data_path=coremof_data_path)
-        bridges = search_csd_name(
-            name, coremof_db=coremof_db, csd_db=csd_db, limit=limit
-        )
+        bridges = search_csd_name(name, coremof_db=coremof_db, csd_db=csd_db, limit=limit)
         results = []
         for b in bridges:
             results.append(
                 {
                     "csd_refcode": b.csd_record.refcode,
                     "csd_name": (
-                        b.csd_record.chemical_name_common
-                        or b.csd_record.chemical_name_systematic
+                        b.csd_record.chemical_name_common or b.csd_record.chemical_name_systematic
                     ),
                     "has_coremof": b.has_coremof,
                     "coremof": [_coremof_record_dict(r) for r in b.coremof_records],
@@ -374,6 +371,8 @@ def place_adsorbate_impl(
             "atoms_before": xtal.n_atoms,
             "atoms_after": result.crystal.n_atoms,
             "clashes": result.clashes,
+            "validation": result.validation.to_dict() if result.validation is not None else None,
+            "is_valid": result.validation.is_valid if result.validation is not None else None,
         }
     except Exception as exc:
         logger.warning("place_adsorbate failed", exc_info=True)
@@ -395,7 +394,7 @@ def validate_impl(
     try:
         from mofforge.validation import validate_structure
 
-        xtal = load_crystal(cif_path, with_bonds=True)
+        xtal = load_crystal(cif_path, with_bonds=False)
         report = validate_structure(
             xtal,
             check_clashes=check_clashes,
@@ -405,6 +404,10 @@ def validate_impl(
         return {
             "success": True,
             "is_valid": report.is_valid,
+            "validation": report.to_dict(),
+            "errors": report.errors,
+            "checks_performed": report.checks_performed,
+            "checks_skipped": report.checks_skipped,
             "steric_clashes": len(report.steric_clashes),
             "unusual_bonds": len(report.unusual_bonds),
             "coordination_issues": len(report.coordination_issues),
@@ -453,6 +456,7 @@ def build_impl(
                 "elapsed_seconds": result.elapsed_seconds,
                 "output_paths": [str(p) for p in result.output_paths],
                 "atoms": result.crystal.n_atoms if result.crystal else None,
+                "validation": result.validation.to_dict() if result.validation else None,
             }
         return {
             "success": False,
@@ -593,6 +597,7 @@ def functionalize_impl(
             "is_valid": res.is_valid,
             "clashes": res.clashes,
             "validation_summary": res.validation_summary,
+            "validation": res.validation,
         }
     except Exception as exc:
         logger.warning("functionalize failed", exc_info=True)
@@ -639,6 +644,7 @@ def functionalize_campaign_impl(
                     "output_cif": r.output_cif,
                     "is_valid": r.is_valid,
                     "clashes": r.clashes,
+                    "validation": r.validation,
                     "error": r.error,
                 }
                 for r in results

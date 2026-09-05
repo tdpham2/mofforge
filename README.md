@@ -17,6 +17,13 @@ Built on [pymatgen](https://pymatgen.org/), [NetworkX](https://networkx.org/), a
 > Always validate generated structures before using them in production workflows.
 > If you encounter bugs or unexpected behavior, please open an issue on GitHub.
 
+## Reliability release (0.2)
+
+Version 0.2 adds lattice-aware periodic geometry, metadata-preserving
+transformations, explicit validation errors and warnings, seeded workflows,
+and artifact manifests. See [reliability and migration notes](docs/reliability.md)
+for changed validation defaults, output naming, and reproducibility guarantees.
+
 ## Features
 
 ### Substructure Search & Replacement
@@ -85,7 +92,7 @@ pip install mofforge
 Optional dependencies for specific features:
 
 ```bash
-pip install mofforge[build]   # Pormake backend
+pip install mofforge[build]   # Pormake + TOBACCO (tested with Python 3.11)
 pip install mofforge[vis]     # PNG rendering (Playwright)
 pip install mofforge[chem]    # SMILES conversion (RDKit)
 pip install mofforge[mcp]     # MCP server for AI agents
@@ -111,7 +118,7 @@ For development:
 ```bash
 git clone <repo-url>
 cd mofforge
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 ```
 
 ### Dependencies
@@ -147,12 +154,13 @@ building-block CIFs in this order:
    `mofforge.toml`) containing `template_database/`, `nodes_database/`,
    `edges_database/`.
 2. Auto-detection next to the installed `tobacco3` package.
-3. A **one-time download** of a pinned data tarball from
+3. A **one-time download** of a checksum-verified data tarball pinned to a commit from
    [`tdpham2/tobacco_3.0`](https://github.com/tdpham2/tobacco_3.0), cached under
    `~/.cache/mofforge/tobacco-data` (repo/tag overridable via
-   `MOFFORGE_TOBACCO_DATA_REPO` / `MOFFORGE_TOBACCO_DATA_TAG`).
+   `MOFFORGE_TOBACCO_DATA_REPO` / `MOFFORGE_TOBACCO_DATA_TAG`; custom sources also require
+   `MOFFORGE_TOBACCO_DATA_SHA256`).
 
-So a fresh install needs no manual data setup -- the first build fetches ~27 MB
+So a fresh install needs no manual data setup -- the first build fetches ~4.5 MB compressed
 and caches it. This data is **GPLv3** (ToBaCCo, © 2019 Ryther Anderson); mofforge
 only fetches and uses it at runtime (aggregation), so mofforge itself remains MIT.
 
@@ -413,7 +421,7 @@ mofforge builds on and is inspired by several projects:
 ## Testing
 
 ```bash
-pip install -e ".[dev]"
+uv sync --locked --extra dev
 pytest tests/ -v
 ```
 

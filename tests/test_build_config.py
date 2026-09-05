@@ -244,6 +244,8 @@ class TestFetchTobaccoDataFromGithub:
         cache_root = tmp_path / "cache"
         tarball = _make_tobacco_tarball(tmp_path)
 
+        from mofforge.provenance import file_hash
+
         calls = {"n": 0}
 
         def fake_urlretrieve(url, filename):
@@ -254,7 +256,13 @@ class TestFetchTobaccoDataFromGithub:
             return filename, None
 
         with (
-            patch.dict(os.environ, {"XDG_CACHE_HOME": str(cache_root)}),
+            patch.dict(
+                os.environ,
+                {
+                    "XDG_CACHE_HOME": str(cache_root),
+                    "MOFFORGE_TOBACCO_DATA_SHA256": file_hash(tarball),
+                },
+            ),
             patch("urllib.request.urlretrieve", side_effect=fake_urlretrieve),
         ):
             result = cfgmod._fetch_tobacco_data_from_github()
@@ -288,6 +296,8 @@ class TestFetchTobaccoDataFromGithub:
 
         cache_root = tmp_path / "cache"
         tarball = _make_tobacco_tarball(tmp_path, tag="custom-tag")
+        from mofforge.provenance import file_hash
+
         seen = {}
 
         def fake_urlretrieve(url, filename):
@@ -304,12 +314,59 @@ class TestFetchTobaccoDataFromGithub:
                     "XDG_CACHE_HOME": str(cache_root),
                     "MOFFORGE_TOBACCO_DATA_REPO": "me/myfork",
                     "MOFFORGE_TOBACCO_DATA_TAG": "custom-tag",
+                    "MOFFORGE_TOBACCO_DATA_SHA256": file_hash(tarball),
                 },
             ),
             patch("urllib.request.urlretrieve", side_effect=fake_urlretrieve),
         ):
             result = cfgmod._fetch_tobacco_data_from_github()
             assert result is not None
-            assert result.name == "custom-tag"
+            assert len(result.name) == 24
             assert "me/myfork" in seen["url"]
-            assert "custom-tag.tar.gz" in seen["url"]
+            assert seen["url"].endswith("/tar.gz/custom-tag")
+
+
+def test_download_checksum_mismatch_is_not_published(tmp_path, monkeypatch):
+    from mofforge.build import config as cfgmod
+
+    tarball = _make_tobacco_tarball(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("MOFFORGE_TOBACCO_DATA_SHA256", "0" * 64)
+
+    def copy_archive(url, filename):
+        import shutil
+
+        shutil.copy(tarball, filename)
+
+    monkeypatch.setattr("urllib.request.urlretrieve", copy_archive)
+    assert cfgmod._fetch_tobacco_data_from_github() is None
+    assert not list((tmp_path / "cache").rglob(".mofforge-data.json"))
+
+
+def test_custom_download_requires_checksum(tmp_path, monkeypatch):
+    from mofforge.build import config as cfgmod
+
+    monkeypatch.setenv("MOFFORGE_TOBACCO_DATA_REPO", "another/repository")
+    monkeypatch.delenv("MOFFORGE_TOBACCO_DATA_SHA256", raising=False)
+    with pytest.raises(ConfigError, match="SHA256"):
+        cfgmod._fetch_tobacco_data_from_github()
+
+
+def test_cache_key_includes_repository(tmp_path, monkeypatch):
+    import shutil
+
+    from mofforge.build import config as cfgmod
+    from mofforge.provenance import file_hash
+
+    tarball = _make_tobacco_tarball(tmp_path)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("MOFFORGE_TOBACCO_DATA_SHA256", file_hash(tarball))
+    monkeypatch.setattr(
+        "urllib.request.urlretrieve", lambda url, filename: shutil.copy(tarball, filename)
+    )
+    roots = []
+    for repo in ("first/repository", "second/repository"):
+        monkeypatch.setenv("MOFFORGE_TOBACCO_DATA_REPO", repo)
+        roots.append(cfgmod._fetch_tobacco_data_from_github())
+    assert all(roots)
+    assert roots[0] != roots[1]

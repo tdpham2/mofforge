@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -30,6 +32,8 @@ _TOBACCO_DATA_DIRS = (
 # stays MIT.  Both values are overridable via environment variables.
 _TOBACCO_DATA_REPO = "tdpham2/tobacco_3.0"
 _TOBACCO_DATA_TAG = "data-v1"
+_TOBACCO_DATA_REVISION = "effe43059cfd78015db616890a6d20c090633378"
+_TOBACCO_DATA_SHA256 = "fc7a9e97d2777e1b1c082df5bac666034f0897c82b8af1a7ab9b7e25bc8e91e3"
 
 
 class ConfigError(Exception):
@@ -74,10 +78,7 @@ def validate_tobacco() -> list[str]:
     try:
         import tobacco3
     except ImportError:
-        errors.append(
-            "tobacco3 is not installed.  Install it with:  "
-            "pip install 'tobacco3 @ git+https://github.com/tdpham2/tobacco_3.0.git'"
-        )
+        errors.append("tobacco3 is not installed.  Install it with:  pip install 'mofforge[build]'")
         return errors
 
     if not hasattr(tobacco3, "generate_mof"):
@@ -144,12 +145,11 @@ def _fetch_tobacco_data_from_github() -> Path | None:
 
     Fetches a pinned tarball of ``_TOBACCO_DATA_REPO`` at ``_TOBACCO_DATA_TAG``
     (both overridable via ``MOFFORGE_TOBACCO_DATA_REPO`` /
-    ``MOFFORGE_TOBACCO_DATA_TAG``) into ``~/.cache/mofforge/tobacco-data/<tag>``.
+    ``MOFFORGE_TOBACCO_DATA_TAG``) into a repository/revision/digest-specific cache directory.
     A cached copy that already validates is reused without re-downloading.
     Returns the cached directory, or *None* if the download/extract fails (the
     caller then raises a helpful :class:`ConfigError`).
     """
-    import shutil
     import tarfile
     import tempfile
     import urllib.request
@@ -157,16 +157,35 @@ def _fetch_tobacco_data_from_github() -> Path | None:
     repo = os.environ.get("MOFFORGE_TOBACCO_DATA_REPO", _TOBACCO_DATA_REPO)
     tag = os.environ.get("MOFFORGE_TOBACCO_DATA_TAG", _TOBACCO_DATA_TAG)
 
-    dest = _tobacco_cache_root() / tag
-    # Cache hit: a previously extracted, still-valid copy.
-    if dest.is_dir() and not validate_tobacco_data_dir(dest):
-        logger.debug("Using cached TOBACCO data at %s", dest)
-        return dest
+    default_source = repo == _TOBACCO_DATA_REPO and tag == _TOBACCO_DATA_TAG
+    revision = _TOBACCO_DATA_REVISION if default_source else tag
+    expected = os.environ.get(
+        "MOFFORGE_TOBACCO_DATA_SHA256", _TOBACCO_DATA_SHA256 if default_source else ""
+    )
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected.lower()):
+        raise ConfigError(
+            "Custom TOBACCO downloads require MOFFORGE_TOBACCO_DATA_SHA256 (64 hex digits)."
+        )
+    expected = expected.lower()
+    identity = {"repo": repo, "revision": revision, "archive_sha256": expected}
+    cache_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
+    dest = _tobacco_cache_root() / cache_key
 
-    url = f"https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz"
+    def cache_valid():
+        marker = dest / ".mofforge-data.json"
+        try:
+            return (
+                not validate_tobacco_data_dir(dest) and json.loads(marker.read_text()) == identity
+            )
+        except (OSError, ValueError):
+            return False
+
+    if cache_valid():
+        return dest
+    url = f"https://codeload.github.com/{repo}/tar.gz/{revision}"
     logger.warning(
-        "TOBACCO data not found locally; downloading %s@%s (~27 MB, one-time) "
-        "from %s into %s",
+        "TOBACCO data not found locally; downloading %s@%s "
+        "(~4.5 MB compressed, one-time) from %s into %s",
         repo,
         tag,
         url,
@@ -179,6 +198,13 @@ def _fetch_tobacco_data_from_github() -> Path | None:
             tmp_path = Path(tmp)
             tarball = tmp_path / "data.tar.gz"
             urllib.request.urlretrieve(url, tarball)
+            from mofforge.provenance import file_hash
+
+            actual = file_hash(tarball)
+            if actual != expected:
+                raise ConfigError(
+                    f"TOBACCO archive checksum mismatch: expected {expected}, got {actual}."
+                )
 
             extract_dir = tmp_path / "extract"
             extract_dir.mkdir()
@@ -192,21 +218,25 @@ def _fetch_tobacco_data_from_github() -> Path | None:
             data_root = roots[0] if len(roots) == 1 else extract_dir
             if validate_tobacco_data_dir(data_root):
                 logger.warning(
-                    "Downloaded archive from %s is missing expected TOBACCO "
-                    "data directories",
+                    "Downloaded archive from %s is missing expected TOBACCO data directories",
                     url,
                 )
                 return None
 
-            # Atomic-ish move into place (temp dir is on the same filesystem).
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.move(str(data_root), str(dest))
+            (data_root / ".mofforge-data.json").write_text(json.dumps(identity, sort_keys=True))
+            # Publish a complete directory atomically. A concurrent successful
+            # installer can win; never remove its files or expose partial data.
+            try:
+                data_root.rename(dest)
+            except OSError:
+                if not cache_valid():
+                    raise
+
     except Exception as exc:
         logger.warning("Failed to fetch TOBACCO data from %s: %s", url, exc)
         return None
 
-    return dest if dest.is_dir() else None
+    return dest if cache_valid() else None
 
 
 @dataclass
@@ -231,9 +261,7 @@ class BuildConfig:
         pormake_cfg = backends.get("pormake", {})
 
         # ``data_dir`` is the new key; ``path`` is the legacy alias.
-        tobacco_data_dir: str | Path | None = tobacco_cfg.get("data_dir") or tobacco_cfg.get(
-            "path"
-        )
+        tobacco_data_dir: str | Path | None = tobacco_cfg.get("data_dir") or tobacco_cfg.get("path")
         pormake_output_dir: str | Path | None = pormake_cfg.get("output_dir")
 
         # --- 2. Environment variables (medium priority) ---
@@ -306,9 +334,7 @@ def validate_pormake() -> list[str]:
     try:
         import pormake
     except ImportError:
-        errors.append(
-            "pormake is not installed.  Install it with:  pip install pormake"
-        )
+        errors.append("pormake is not installed.  Install it with:  pip install pormake")
         return errors
 
     try:

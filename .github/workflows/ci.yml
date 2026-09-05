@@ -1,0 +1,79 @@
+name: Reliability checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: '3.10'
+            extras: '--extra dev'
+            name: core-minimum
+          - python: '3.14'
+            extras: '--extra dev'
+            name: core-current
+          - python: '3.14'
+            extras: '--extra dev --extra chem'
+            name: chemistry
+          - python: '3.14'
+            extras: '--extra dev --extra mcp'
+            name: mcp
+          - python: '3.11'
+            extras: '--extra dev --extra build'
+            name: builders
+    name: ${{ matrix.name }} (Python ${{ matrix.python }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.18'
+          enable-cache: true
+      - run: uv sync --locked --python '${{ matrix.python }}' ${{ matrix.extras }}
+      - run: uv run --no-sync ruff check src/ tests/
+      - run: uv run --no-sync pytest tests/ --cov=mofforge --cov-report=term-missing --cov-report=xml
+      - if: matrix.name == 'builders'
+        run: uv run --no-sync pytest tests/test_build_integration.py -v
+        env:
+          MOFFORGE_RUN_BUILD_TESTS: '1'
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.name }}
+          path: coverage.xml
+
+  wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.18'
+      - run: uv build
+      - run: uv venv /tmp/mofforge-wheel --python 3.11
+      - run: uv export --locked --no-emit-project --no-dev --no-hashes -o /tmp/mofforge-constraints.txt
+      - run: uv pip install --python /tmp/mofforge-wheel/bin/python --constraint /tmp/mofforge-constraints.txt dist/*.whl
+      - run: /tmp/mofforge-wheel/bin/mofforge --help
+      - name: Check packaged fragments and version away from source checkout
+        working-directory: /tmp
+        run: |
+          /tmp/mofforge-wheel/bin/python - <<'PY'
+          import mofforge
+          from mofforge.data import moiety_path
+          assert mofforge.__version__ == '0.2.0'
+          assert moiety_path('2-!-p-phenylene.xyz').is_file()
+          print(mofforge.__file__)
+          PY

@@ -14,6 +14,10 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mofforge.csd.database import CSDDatabase
 
 from mofforge.coremof.models import BridgeResult, CoreMOFRecord, CoreMOFSearchResult
 
@@ -149,7 +153,8 @@ INSERT OR REPLACE INTO records (
     heat_capacity_300k, kh_class,
     doi, year, publication, source, extension, natoms,
     raw_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
 _INSERT_METAL = "INSERT INTO record_metals (coreid, metal) VALUES (?, ?)"
@@ -758,7 +763,7 @@ def csd_to_coremof(
 def search_csd_name(
     name: str,
     coremof_db: CoreMOFDatabase | None = None,
-    csd_db: "CSDDatabase | None" = None,
+    csd_db: CSDDatabase | None = None,
     limit: int | None = None,
 ) -> list[BridgeResult]:
     """Search for a MOF name in CSD and return CoreMOF entries for each match.
