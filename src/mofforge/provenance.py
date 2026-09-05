@@ -35,6 +35,7 @@ class Provenance:
     output_hash: str | None = None
     software_versions: dict[str, str] = field(default_factory=dict)
     validation: dict | None = None
+    input_descriptor: dict | None = None
 
     def to_dict(self) -> dict:
         """Convert to a plain dictionary."""
@@ -74,6 +75,7 @@ class Provenance:
             output_hash=d.get("output_hash"),
             software_versions=d.get("software_versions", {}),
             validation=d.get("validation"),
+            input_descriptor=copy.deepcopy(d.get("input_descriptor")),
         )
 
     @classmethod
@@ -147,6 +149,7 @@ def software_versions() -> dict[str, str]:
         "scipy",
         "networkx",
         "pymatgen",
+        "pymatgen-core",
         "rdkit",
         "pormake",
         "tobacco3",
@@ -175,7 +178,7 @@ def derive_seed(random_seed: int | None, identity) -> int | None:
 
 
 def record_operation(
-    crystal, parent, operation: str, parameters: dict, *, validation=None
+    crystal, parent, operation: str, parameters: dict, *, validation=None, input_descriptor=None
 ) -> Provenance:
     record = Provenance(
         parent=parent.name,
@@ -185,6 +188,7 @@ def record_operation(
         output_hash=structure_hash(crystal),
         software_versions=dict(software_versions()),
         validation=validation.to_dict() if validation is not None else None,
+        input_descriptor=copy.deepcopy(input_descriptor),
     )
     if parent.provenance is not None:
         record = parent.provenance.chain(record)
@@ -207,6 +211,8 @@ def write_manifest(crystal, output_path: str | Path, validation=None) -> Path:
         if validation is not None
         else (crystal.provenance.validation if crystal.provenance is not None else None),
     }
+    if crystal.provenance is not None and crystal.provenance.input_descriptor is not None:
+        data["input_descriptor"] = copy.deepcopy(crystal.provenance.input_descriptor)
     manifest.write_text(json.dumps(data, indent=2, default=_json_default, allow_nan=False) + "\n")
     return manifest
 

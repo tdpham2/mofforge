@@ -23,6 +23,10 @@ Version 0.2 adds lattice-aware periodic geometry, metadata-preserving
 transformations, explicit validation errors and warnings, seeded workflows,
 and artifact manifests. See [reliability and migration notes](docs/reliability.md)
 for changed validation defaults, output naming, and reproducibility guarantees.
+The [roadmap](docs/roadmap.md) tracks completed work and the next priorities for
+resumable studies, scientific evaluation, and scaling.
+The unreleased [artifact verifier](docs/artifact_verification.md) checks generated
+file integrity and recorded batch inputs with `mofforge verify <artifact> --json`.
 
 ## Features
 
@@ -306,21 +310,21 @@ All examples are in the `examples/` directory with sample data in `examples/data
 
 | Script | Description |
 |--------|-------------|
-| [`pattern_matching.py`](examples/pattern_matching.py) | Find p-phenylene linkers in IRMOF-1 |
-| [`linker_functionalization.py`](examples/linker_functionalization.py) | Functionalize BDC linkers with acetylamido groups |
-| [`selective_modification.py`](examples/selective_modification.py) | All 5 replacement modes demonstrated |
-| [`structure_repair.py`](examples/structure_repair.py) | Repair missing hydrogen atoms from X-ray data |
-| [`cleanup_and_repair.py`](examples/cleanup_and_repair.py) | Fix disordered rings and remove guest molecules |
-| [`defect_engineering.py`](examples/defect_engineering.py) | Engineer missing-linker defects in UiO-66 |
-| [`symmetry_analysis.py`](examples/symmetry_analysis.py) | Replacement with symmetry analysis and supercell construction |
+| [`pattern_matching.py`](examples/search/pattern_matching.py) | Find p-phenylene linkers in IRMOF-1 |
+| [`linker_functionalization.py`](examples/modify/linker_functionalization.py) | Functionalize BDC linkers with acetylamido groups |
+| [`selective_modification.py`](examples/modify/selective_modification.py) | All 5 replacement modes demonstrated |
+| [`structure_repair.py`](examples/repair/structure_repair.py) | Repair missing hydrogen atoms from X-ray data |
+| [`cleanup_and_repair.py`](examples/repair/cleanup_and_repair.py) | Fix disordered rings and remove guest molecules |
+| [`defect_engineering.py`](examples/modify/defect_engineering.py) | Engineer missing-linker defects in UiO-66 |
+| [`symmetry_analysis.py`](examples/search/symmetry_analysis.py) | Replacement with symmetry analysis and supercell construction |
 
 ### Advanced examples
 
 | Script | Description |
 |--------|-------------|
-| [`string_pattern_search.py`](examples/string_pattern_search.py) | String-based pattern matching: `"[Zn]-[O]"`, rings, wildcards |
-| [`multi_step_pipeline.py`](examples/multi_step_pipeline.py) | Chain multiple operations with provenance tracking |
-| [`structure_validation.py`](examples/structure_validation.py) | Post-modification structure validation |
+| [`string_pattern_search.py`](examples/search/string_pattern_search.py) | String-based pattern matching: `"[Zn]-[O]"`, rings, wildcards |
+| [`multi_step_pipeline.py`](examples/pipeline/multi_step_pipeline.py) | Chain multiple operations with provenance tracking |
+| [`structure_validation.py`](examples/validation/structure_validation.py) | Post-modification structure validation |
 
 Run any example:
 

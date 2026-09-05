@@ -229,6 +229,31 @@ def validate_cmd(structure, verbose, as_json):
         raise click.exceptions.Exit(1)
 
 
+@main.command("verify")
+@click.argument("artifact", type=click.Path(path_type=Path))
+@click.option("--manifest", type=click.Path(path_type=Path), help="Alternate manifest path.")
+@click.option("--json", "as_json", is_flag=True, help="Emit a structured verification report.")
+def verify_cmd(artifact, manifest, as_json):
+    """Verify an artifact's bytes and recorded inputs without changing files."""
+    import json
+
+    from mofforge.artifacts import verify_artifact
+
+    report = verify_artifact(artifact, manifest_path=manifest)
+    if as_json:
+        click.echo(json.dumps(report.to_dict()))
+    else:
+        click.echo(f"Artifact verification (verified={report.is_verified}): {artifact}")
+        click.echo(f"  File integrity: {report.file_integrity}")
+        click.echo(f"  Inputs verified: {report.inputs_verified}")
+        for message in report.errors:
+            click.echo(f"  ERROR: {message}")
+        for message in report.warnings:
+            click.echo(f"  WARNING: {message}")
+    if not report.is_verified:
+        raise click.exceptions.Exit(1)
+
+
 @main.command("batch")
 @click.option("-c", "--config", "config_path", required=True, help="Path to YAML config file.")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")

@@ -81,6 +81,10 @@ operation parameters, software versions, provenance, and any validation report.
 Provenance schema 2 uses flat history, avoiding recursive growth. Existing
 provenance JSON files remain readable through `Provenance.from_json`.
 
+The unreleased [artifact verification follow-up](artifact_verification.md) adds
+complete batch input descriptors and `mofforge verify`. Older manifests receive
+explicit integrity-only verification; verified reload remains future work.
+
 Batch and campaign filenames now include a hash of their input identity and
 parameters. Update scripts that assumed the old exact output names to consume
 the returned output paths. Batch ordering is stable across serial and parallel
@@ -122,5 +126,7 @@ a staged pinned source archive to avoid downloading data during that test.
 For adsorption timing, run `python scripts/benchmark_adsorption.py`. It checks
 clustering against exhaustive lattice-aware selection before reporting timings.
 
-After the reliability release, the next additions are resumable campaign
-checkpoints and a `mofforge doctor` command. They are separate follow-up work.
+The reliability implementation is merged in [PR #11](https://github.com/tdpham2/mofforge/pull/11).
+The [roadmap](roadmap.md) expands the follow-up work into artifact verification,
+dataset resolution, environment diagnostics, resumable campaigns, and scientific
+evaluation, with dependencies and acceptance criteria.

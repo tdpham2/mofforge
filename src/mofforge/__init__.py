@@ -15,6 +15,7 @@ from mofforge.adsorbate import (
     get_molecule,
     place_adsorbate,
 )
+from mofforge.artifacts import VerificationReport, verify_artifact
 from mofforge.batch import run_batch
 from mofforge.build import (
     BuildConfig,
@@ -112,6 +113,7 @@ __all__ = [
     "SolventRemovalResult",
     "Topology",
     "ValidationReport",
+    "VerificationReport",
     "anchor_indices",
     "apply_alignment",
     "async_render_file_to_png",
@@ -158,6 +160,7 @@ __all__ = [
     "swap",
     "untag_anchor",
     "validate_structure",
+    "verify_artifact",
     "wrap_coords",
     "write_cif",
     "write_xyz",
