@@ -14,6 +14,13 @@ import yaml
 from mofforge.core.bonding import infer_bonds
 from mofforge.core.crystal import Crystal
 from mofforge.core.moiety import fragment
+from mofforge.provenance import (
+    content_hash,
+    derive_seed,
+    effective_seed,
+    file_hash,
+    record_operation,
+)
 from mofforge.replace.replace import replace_pattern
 from mofforge.search.search import find_pattern
 from mofforge.validation import ValidationReport, validate_structure
@@ -30,6 +37,7 @@ class BatchResult:
     success: bool = True
     error: str | None = None
     validation: ValidationReport | None = None
+    run_id: str = ""
 
 
 @dataclass
@@ -43,6 +51,7 @@ class BatchConfig:
     naming: str = "{parent_name}_modified"
     parallel: int = 0
     moiety_path: str | None = None
+    random_seed: int | None = None
 
     _VALID_FORMATS = ("cif", "xyz")
 
@@ -105,6 +114,7 @@ class BatchConfig:
             naming=output.get("naming", "{parent_name}_modified"),
             parallel=raw.get("parallel", 0),
             moiety_path=moiety_path,
+            random_seed=raw.get("random_seed"),
         )
 
 
@@ -121,7 +131,7 @@ def _resolve_parent_paths(patterns: list[str]) -> list[Path]:
                 paths.append(p)
             else:
                 logger.warning("No files matched pattern: %s", pattern)
-    return paths
+    return sorted(set(paths), key=lambda p: str(p.resolve()))
 
 
 _VALID_OP_TYPES = ("replace", "remove", "validate", "desolvate")
@@ -139,7 +149,16 @@ def _process_single(
         current = Crystal.from_cif(parent_path)
         current = infer_bonds(current, periodic=True)
 
-        for op in config.operations:
+        identity = [
+            str(parent_path.resolve()),
+            file_hash(parent_path),
+            config.operations,
+            config.random_seed,
+            config.moiety_path,
+            config.output_format,
+        ]
+        result.run_id = content_hash(identity)[:12]
+        for step_index, op in enumerate(config.operations):
             op_type = op.get("type", "")
 
             if op_type not in _VALID_OP_TYPES:
@@ -160,6 +179,11 @@ def _process_single(
                 elif mode.startswith("nb_loc_"):
                     kwargs["nb_loc"] = int(mode.split("_")[-1])
 
+                if mode not in {"all_optimal", "random"} and not mode.startswith("nb_loc_"):
+                    raise ValueError(f"Unknown replacement mode: {mode}")
+                kwargs["random_seed"] = op.get(
+                    "random_seed", derive_seed(config.random_seed, [identity, step_index])
+                )
                 current = replace_pattern(match, r, **kwargs)
 
                 # Re-infer bonds for subsequent steps
@@ -186,15 +210,26 @@ def _process_single(
                     current = infer_bonds(current, periodic=True)
 
             elif op_type == "validate":
-                report = validate_structure(current)
+                report = validate_structure(current, **{k: v for k, v in op.items() if k != "type"})
                 result.validation = report
+                record_operation(current, current, "validate", op, validation=report)
 
+        # Always describe the final artifact, even if validation also appeared
+        # earlier in the pipeline.
+        result.validation = validate_structure(current)
+        record_operation(
+            current,
+            current,
+            "batch_result",
+            {"run_id": result.run_id, "random_seed": config.random_seed},
+            validation=result.validation,
+        )
         # Write output
         output_dir = Path(config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_name = config.naming.format(parent_name=parent_name)
-        output_path = output_dir / f"{output_name}.{config.output_format}"
+        output_path = output_dir / f"{output_name}_{result.run_id}.{config.output_format}"
         if config.output_format == "xyz":
             current.write_xyz(output_path)
         else:
@@ -214,6 +249,7 @@ def _process_single(
 def run_batch(config_path: str | Path) -> list[BatchResult]:
     """Run batch processing from a YAML configuration file."""
     config = BatchConfig.from_yaml(config_path)
+    config.random_seed = effective_seed(config.random_seed)
     parent_paths = _resolve_parent_paths(config.parent_paths)
 
     if not parent_paths:
@@ -229,7 +265,12 @@ def run_batch(config_path: str | Path) -> list[BatchResult]:
                 executor.submit(_process_single, path, config): path for path in parent_paths
             }
             for future in as_completed(futures):
-                results.append(future.result())
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    results.append(
+                        BatchResult(parent_name=futures[future].stem, success=False, error=str(exc))
+                    )
     else:
         for path in parent_paths:
             results.append(_process_single(path, config))
@@ -239,4 +280,4 @@ def run_batch(config_path: str | Path) -> list[BatchResult]:
     failures = sum(1 for r in results if not r.success)
     logger.debug("Batch complete: %d succeeded, %d failed", successes, failures)
 
-    return results
+    return sorted(results, key=lambda r: (r.parent_name, r.run_id))

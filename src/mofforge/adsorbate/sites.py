@@ -10,7 +10,8 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from mofforge.core.crystal import Crystal
-from mofforge.utils.config import clean_species as _clean_species, config
+from mofforge.utils.config import clean_species as _clean_species
+from mofforge.utils.config import config
 from mofforge.validation import EXPECTED_COORDINATION
 
 logger = logging.getLogger("mofforge")
@@ -45,6 +46,12 @@ def find_adsorption_sites(
     max_sites: int | None = None,
 ) -> list[AdsorptionSite]:
     """Identify candidate adsorption sites in a MOF structure."""
+    if grid_spacing <= 0 or cluster_tolerance <= 0 or min_distance < 0:
+        raise ValueError(
+            "Grid spacing and cluster tolerance must be positive; min_distance nonnegative."
+        )
+    if max_sites is not None and max_sites < 0:
+        raise ValueError("max_sites must be nonnegative.")
     if crystal.n_atoms == 0:
         raise ValueError("Cannot find adsorption sites in an empty crystal.")
 
@@ -101,15 +108,15 @@ def _find_void_sites(
     grid_frac = np.array(np.meshgrid(fa, fb, fc, indexing="ij")).reshape(3, -1).T  # (M, 3)
     grid_cart = lattice.get_cartesian_coords(grid_frac)
 
-    # Replicate framework atoms in a 3x3x3 supercell for periodic boundaries
-    shifts = np.array(
-        [[i, j, k] for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)]
-    )  # (27, 3)
-    supercell_frac = (frac[np.newaxis, :, :] + shifts[:, np.newaxis, :]).reshape(-1, 3)
-    supercell_cart = lattice.get_cartesian_coords(supercell_frac)
-
-    tree = cKDTree(supercell_cart)
-    min_dists, _ = tree.query(grid_cart)
+    # Exact lattice-aware distances in bounded chunks work for skewed cells
+    # without assuming that 27 replicated images cover every nearest image.
+    chunk_size = max(1, 250_000 // len(frac))
+    min_dists = np.concatenate(
+        [
+            lattice.get_all_distances(grid_frac[start : start + chunk_size], frac).min(axis=1)
+            for start in range(0, len(grid_frac), chunk_size)
+        ]
+    )
 
     mask = min_dists >= min_distance
     if not np.any(mask):
@@ -139,39 +146,30 @@ def _cluster_void_points(
     if len(frac_coords) == 0:
         return []
 
-    # Sort by min_dist descending (best points first)
-    order = np.argsort(-min_dists)
-    frac_sorted = frac_coords[order]
-    cart_sorted = cart_coords[order]
-    dist_sorted = min_dists[order]
-
-    centers_cart: list[np.ndarray] = []
-    centers_frac: list[np.ndarray] = []
-    centers_dist: list[float] = []
-
-    for i in range(len(frac_sorted)):
-        pt = cart_sorted[i]
-        merged = False
-        for _j, center in enumerate(centers_cart):
-            if np.linalg.norm(pt - center) < tolerance:
-                merged = True
-                break
-        if not merged:
-            centers_cart.append(pt)
-            centers_frac.append(frac_sorted[i])
-            centers_dist.append(float(dist_sorted[i]))
-
+    # A periodic fractional KD-tree provides a conservative candidate set.
+    # The smallest lattice singular value bounds fractional distances for any
+    # Cartesian neighbor; exact lattice distances decide which points merge.
+    wrapped = frac_coords % 1.0
+    tree = cKDTree(wrapped, boxsize=1.0)
+    radius = tolerance / np.linalg.svd(lattice.matrix, compute_uv=False).min()
+    blocked = np.zeros(len(wrapped), dtype=bool)
     sites = []
-    for fc, cc, d in zip(centers_frac, centers_cart, centers_dist, strict=True):
+    for i in np.argsort(-min_dists, kind="stable"):
+        if blocked[i]:
+            continue
+        candidates = np.asarray(tree.query_ball_point(wrapped[i], radius), dtype=int)
+        distances = lattice.get_all_distances(wrapped[i : i + 1], wrapped[candidates])[0]
+        blocked[candidates[distances < tolerance]] = True
         sites.append(
             AdsorptionSite(
-                frac_coords=fc,
-                cart_coords=cc,
+                frac_coords=wrapped[i].copy(),
+                cart_coords=lattice.get_cartesian_coords(wrapped[i]),
                 site_type="void",
-                nearest_framework_dist=d,
-                metadata={"estimated_pore_radius": d},
+                nearest_framework_dist=float(min_dists[i]),
+                metadata={"estimated_pore_radius": float(min_dists[i])},
             )
         )
+
     return sites
 
 
@@ -182,7 +180,7 @@ def _find_open_metal_sites(crystal: Crystal) -> list[AdsorptionSite]:
     coordination number, the site is placed opposite the average bond
     direction at a distance typical for metal-adsorbate interactions.
     """
-    if crystal.n_bonds == 0:
+    if crystal.n_bonds == 0 and not crystal.periodic_bonds:
         logger.warning(
             "Crystal '%s' has no bonds; open-metal-site detection "
             "requires inferred bonds. Call infer_bonds() first.",
@@ -202,27 +200,16 @@ def _find_open_metal_sites(crystal: Crystal) -> list[AdsorptionSite]:
             continue
 
         cn_min, cn_max = EXPECTED_COORDINATION[elem]
-        actual_cn = crystal.bonds.degree(i)
+        actual_cn = crystal.coordination_number(i)
 
         if actual_cn >= cn_min:
             continue  # not under-coordinated
 
-        # Compute average bond direction vector from this metal
-        neighbors = list(crystal.bonds.neighbors(i))
-        if not neighbors:
+        neighbor_vecs = crystal.bond_vectors(i)
+        neighbor_vecs = [v for v in neighbor_vecs if np.linalg.norm(v) > 1e-8]
+        if not neighbor_vecs:
             continue
-
         metal_cart = cart[i]
-
-        # Get neighbor Cartesian positions (handling PBC via lattice)
-        neighbor_vecs = []
-        for j in neighbors:
-            # Use minimum-image convention
-            diff_frac = crystal.frac_coords[j] - crystal.frac_coords[i]
-            # Wrap to [-0.5, 0.5)
-            diff_frac -= np.round(diff_frac)
-            diff_cart = lattice.get_cartesian_coords(diff_frac)
-            neighbor_vecs.append(diff_cart)
 
         avg_bond_dir = np.mean(neighbor_vecs, axis=0)
         avg_bond_dir_norm = np.linalg.norm(avg_bond_dir)
@@ -257,8 +244,7 @@ def _find_open_metal_sites(crystal: Crystal) -> list[AdsorptionSite]:
 
         # Compute actual min dist to framework
         # (should be ~placement_dist from the metal, but check all atoms)
-        diffs = cart - site_cart
-        dists_to_framework = np.linalg.norm(diffs, axis=1)
+        dists_to_framework = lattice.get_all_distances([site_frac], crystal.frac_coords)[0]
         min_dist = float(np.min(dists_to_framework))
 
         sites.append(

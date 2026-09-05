@@ -25,6 +25,13 @@ from mofforge.core.bonding import infer_bonds
 from mofforge.core.crystal import Crystal
 from mofforge.core.moiety import fragment as load_fragment
 from mofforge.functionalize.generate import make_query_replacement
+from mofforge.provenance import (
+    content_hash,
+    derive_seed,
+    effective_seed,
+    file_hash,
+    record_operation,
+)
 from mofforge.replace.replace import replace_pattern
 from mofforge.search.search import find_pattern
 from mofforge.validation import validate_structure
@@ -72,6 +79,7 @@ class FunctionalizationResult:
     is_valid: bool | None = None
     clashes: int | None = None
     validation_summary: str | None = None
+    validation: dict | None = None
     error: str | None = None
 
 
@@ -123,6 +131,9 @@ def functionalize(
     -------
     FunctionalizationResult
     """
+    random_seed = effective_seed(random_seed)
+    if not 0 <= coverage <= 1:
+        raise ValueError("coverage must be in [0, 1].")
     if isinstance(sites, int):
         sites = [sites]
     result = FunctionalizationResult(group=group, sites=list(sites), coverage=coverage)
@@ -130,7 +141,11 @@ def functionalize(
     try:
         with tempfile.TemporaryDirectory() as tmp:
             query_path, replacement_path = make_query_replacement(
-                linker_smiles, sites, group, output_dir=tmp
+                linker_smiles,
+                sites,
+                group,
+                output_dir=tmp,
+                random_seed=derive_seed(random_seed, "fragments"),
             )
             query = load_fragment(Path(query_path).name, fragment_path=tmp)
             replacement = load_fragment(Path(replacement_path).name, fragment_path=tmp)
@@ -147,31 +162,50 @@ def functionalize(
                 )
                 return result
 
-            if random_seed is not None:
-                import random as pyrandom
-
-                pyrandom.seed(random_seed)
-
             nb_loc = _coverage_to_nb_loc(coverage, result.n_matches)
-            child = replace_pattern(
-                match,
-                replacement,
-                nb_loc=nb_loc,
-                name=name or f"{group}_functionalized",
+            child = (
+                parent.copy()
+                if coverage == 0
+                else replace_pattern(
+                    match,
+                    replacement,
+                    nb_loc=nb_loc,
+                    random_seed=derive_seed(random_seed, "locations"),
+                    name=name or f"{group}_functionalized",
+                )
             )
-            result.n_functionalized = nb_loc if nb_loc > 0 else result.n_matches
+            result.n_functionalized = (
+                0 if coverage == 0 else (nb_loc if nb_loc > 0 else result.n_matches)
+            )
             result.crystal = child
 
-            if output_cif is not None:
-                child.write_cif(output_cif)
-                result.output_cif = output_cif
-
+            report = None
             if validate:
                 child_bonded = infer_bonds(child, periodic=True)
                 report = validate_structure(child_bonded)
                 result.is_valid = report.is_valid
                 result.clashes = len(report.steric_clashes)
                 result.validation_summary = report.summary()
+                result.validation = report.to_dict()
+            record_operation(
+                child,
+                parent,
+                "functionalize",
+                {
+                    "linker_smiles": linker_smiles,
+                    "group": group,
+                    "sites": sites,
+                    "coverage": coverage,
+                    "random_seed": random_seed,
+                    "locations": child.provenance.parameters.get("locations", []),
+                    "orientations": child.provenance.parameters.get("orientations", []),
+                    "n_functionalized": result.n_functionalized,
+                },
+                validation=report,
+            )
+            if output_cif is not None:
+                child.write_cif(output_cif)
+                result.output_cif = output_cif
 
     except Exception as exc:
         logger.warning("functionalize failed", exc_info=True)
@@ -220,6 +254,7 @@ def run_campaign(
     list[FunctionalizationResult]
         Ranked best-first.
     """
+    random_seed = effective_seed(random_seed)
     if coverages is None:
         coverages = [0.25, 0.5, 1.0]
 
@@ -231,10 +266,13 @@ def run_campaign(
     site_tag = "-".join(str(i) for i in site_list)
 
     results: list[FunctionalizationResult] = []
-    for group, coverage in product(groups, coverages):
+    parent_identity = file_hash(parent_cif)
+    for group, coverage in sorted(set(product(groups, coverages))):
+        identity = [parent_identity, linker_smiles, group, coverage, site_list, random_seed]
+        run_id = content_hash(identity)[:12]
         cov_tag = f"{round(coverage * 100)}pct"
         output_cif = (
-            str(out_dir / f"{group}_site{site_tag}_{cov_tag}.cif")
+            str(out_dir / f"{group}_site{site_tag}_{cov_tag}_{run_id}.cif")
             if out_dir is not None
             else None
         )
@@ -246,7 +284,7 @@ def run_campaign(
             coverage=coverage,
             output_cif=output_cif,
             validate=validate,
-            random_seed=random_seed,
+            random_seed=derive_seed(random_seed, identity),
         )
         results.append(res)
 

@@ -10,6 +10,7 @@ import networkx as nx
 
 from mofforge.core.bonding import infer_bonds
 from mofforge.core.crystal import Crystal
+from mofforge.provenance import record_operation
 from mofforge.utils.config import clean_species
 from mofforge.vis.colors import METALS
 
@@ -199,11 +200,19 @@ def remove_solvent(
         )
 
     # Collect framework atom indices and extract sub-crystal
-    keep_indices = sorted(
-        idx for comp in framework_components for idx in comp
-    )
+    keep_indices = sorted(idx for comp in framework_components for idx in comp)
     result_crystal = xtal[keep_indices]
     result_crystal.name = f"desolvated_{xtal.name}"
+    record_operation(
+        result_crystal,
+        crystal,
+        "desolvate",
+        {
+            "min_atoms": min_atoms,
+            "keep_metal_containing": keep_metal_containing,
+            "n_framework_components": n_framework_components,
+        },
+    )
 
     n_removed = n_original - len(keep_indices)
 

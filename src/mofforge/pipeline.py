@@ -10,7 +10,7 @@ from typing import Any
 from mofforge.core.bonding import infer_bonds
 from mofforge.core.crystal import Crystal
 from mofforge.core.moiety import fragment
-from mofforge.provenance import Provenance
+from mofforge.provenance import derive_seed, effective_seed, record_operation
 from mofforge.replace.replace import replace_pattern
 from mofforge.search.search import find_pattern
 from mofforge.validation import ValidationReport, validate_structure
@@ -42,10 +42,12 @@ class Pipeline:
         self,
         parent: Crystal | str | Path,
         fragment_path: str | Path | None = None,
+        random_seed: int | None = None,
     ):
         """Initialize a pipeline with a parent crystal."""
         if isinstance(parent, (str, Path)):
             parent = Crystal.from_cif(parent)
+        self._random_seed = effective_seed(random_seed)
         self._parent = parent
         self._moiety_path = fragment_path
         self._steps: list[PipelineStep] = []
@@ -110,9 +112,8 @@ class Pipeline:
         if current.n_bonds == 0 and current.n_atoms > 0:
             current = infer_bonds(current, periodic=True)
 
-        provenance_chain = Provenance(
-            parent=current.name,
-            operation="pipeline_start",
+        record_operation(
+            current, self._parent, "pipeline_start", {"random_seed": self._random_seed}
         )
 
         for i, step in enumerate(self._steps):
@@ -129,21 +130,12 @@ class Pipeline:
 
                 match = find_pattern(q, current)
                 step_name = f"step_{i + 1}_{name}"
+                extra_kwargs.setdefault("random_seed", derive_seed(self._random_seed, i))
                 current = replace_pattern(match, r, name=step_name, **extra_kwargs)
 
                 # Ensure bonds are inferred for the next step
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)
-
-                provenance_chain = provenance_chain.chain(
-                    Provenance(
-                        parent=current.name,
-                        query=query_name,
-                        replacement=replacement_name,
-                        operation="replace",
-                        parameters=step.kwargs,
-                    )
-                )
 
             elif step.operation == "remove":
                 guest_name = step.kwargs["guest"]
@@ -157,19 +149,11 @@ class Pipeline:
 
                 match = find_pattern(g, current, disconnected_component=disconnected)
                 step_name = f"step_{i + 1}_{name}"
+                extra_kwargs.setdefault("random_seed", derive_seed(self._random_seed, i))
                 current = replace_pattern(match, None, name=step_name, **extra_kwargs)
 
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)
-
-                provenance_chain = provenance_chain.chain(
-                    Provenance(
-                        parent=current.name,
-                        query=guest_name,
-                        replacement=None,
-                        operation="remove",
-                    )
-                )
 
             elif step.operation == "desolvate":
                 from mofforge.solvent.removal import remove_solvent
@@ -180,22 +164,14 @@ class Pipeline:
                 if current.n_bonds == 0 and current.n_atoms > 0:
                     current = infer_bonds(current, periodic=True)
 
-                provenance_chain = provenance_chain.chain(
-                    Provenance(
-                        parent=current.name,
-                        operation="desolvate",
-                        parameters=step.kwargs,
-                    )
-                )
-
             elif step.operation == "validate":
                 report = validate_structure(current, **step.kwargs)
                 self._reports.append(report)
+                record_operation(current, current, "validate", step.kwargs, validation=report)
 
             self._intermediates.append(current.copy())
 
         current.name = name
-        current.provenance = provenance_chain
         return current
 
     def build_all(self, name: str = "new_xtal") -> list[Crystal]:

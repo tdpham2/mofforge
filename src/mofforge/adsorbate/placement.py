@@ -12,8 +12,8 @@ from scipy.spatial.transform import Rotation
 from mofforge.adsorbate.molecules import get_molecule
 from mofforge.adsorbate.sites import AdsorptionSite, find_adsorption_sites
 from mofforge.core.crystal import Crystal
-from mofforge.provenance import Provenance
-from mofforge.validation import validate_structure
+from mofforge.provenance import effective_seed, record_operation
+from mofforge.validation import ValidationReport, validate_structure
 
 logger = logging.getLogger("mofforge")
 
@@ -28,6 +28,7 @@ class AdsorbatePlacement:
     n_adsorbates: int
     adsorbate_name: str
     clashes: int = 0
+    validation: ValidationReport | None = None
 
 
 def place_adsorbate(
@@ -49,6 +50,13 @@ def place_adsorbate(
     if site is not None and sites is not None:
         raise ValueError("Provide either 'site' or 'sites', not both.")
 
+    if n_adsorbates < 1:
+        raise ValueError("n_adsorbates must be positive.")
+    if orient not in {"fixed", "random"}:
+        raise ValueError(f"Unknown orient: {orient!r}")
+    if not np.isfinite(min_intermolecular_dist) or min_intermolecular_dist < 0:
+        raise ValueError("min_intermolecular_dist must be finite and nonnegative.")
+    random_seed = effective_seed(random_seed)
     rng = np.random.default_rng(random_seed)
 
     # --- Resolve adsorbate geometry ---
@@ -90,11 +98,17 @@ def place_adsorbate(
 
     # --- Filter sites by intermolecular distance ---
     if len(target_sites) > 1:
-        target_sites = _filter_by_intermolecular_dist(target_sites, min_intermolecular_dist)
+        target_sites = _filter_by_intermolecular_dist(
+            target_sites, min_intermolecular_dist, crystal.lattice
+        )
 
     # --- Place adsorbates ---
     combined = crystal.copy()
     all_indices: list[list[int]] = []
+    molecule_ids = combined.structure.site_properties.get(
+        "mofforge_molecule", [None] * combined.n_atoms
+    )
+    next_molecule = max((x for x in molecule_ids if x is not None), default=-1) + 1
 
     for i, target in enumerate(target_sites):
         # Rotate adsorbate (skip for single atoms)
@@ -117,6 +131,13 @@ def place_adsorbate(
             lattice=combined.lattice,
         )
 
+        from mofforge.core.bonding import infer_bonds
+
+        ads_crystal = infer_bonds(ads_crystal, periodic=False)
+        ads_crystal.structure.add_site_property(
+            "mofforge_molecule", [next_molecule + i] * ads_crystal.n_atoms
+        )
+
         # Track indices
         offset = combined.n_atoms
         indices = list(range(offset, offset + ads_crystal.n_atoms))
@@ -126,19 +147,9 @@ def place_adsorbate(
         combined = combined + ads_crystal
 
     combined.name = name
-    combined.provenance = Provenance(
-        parent=crystal.name,
-        operation="add_adsorbate",
-        parameters={
-            "adsorbate": ads_name,
-            "n_adsorbates": len(target_sites),
-            "strategy": strategy,
-            "orient": orient,
-        },
-    )
-
     # --- Optional validation ---
     n_clashes = 0
+    report = None
     if validate:
         report = validate_structure(
             combined,
@@ -164,6 +175,24 @@ def place_adsorbate(
         crystal.name,
     )
 
+    record_operation(
+        combined,
+        crystal,
+        "add_adsorbate",
+        {
+            "adsorbate": ads_name,
+            "n_adsorbates": len(target_sites),
+            "strategy": strategy,
+            "orient": orient,
+            "random_seed": random_seed,
+            "sites": [s.frac_coords.tolist() for s in target_sites],
+            "min_intermolecular_dist": min_intermolecular_dist,
+            "clash_tolerance": clash_tolerance,
+            "site_options": site_kwargs,
+        },
+        validation=report,
+    )
+
     return AdsorbatePlacement(
         crystal=combined,
         sites=target_sites,
@@ -171,12 +200,14 @@ def place_adsorbate(
         n_adsorbates=len(target_sites),
         adsorbate_name=ads_name,
         clashes=n_clashes,
+        validation=report,
     )
 
 
 def _filter_by_intermolecular_dist(
     sites: list[AdsorptionSite],
     min_dist: float,
+    lattice=None,
 ) -> list[AdsorptionSite]:
     """Greedily filter sites so no two are closer than ``min_dist``."""
     if min_dist <= 0 or len(sites) <= 1:
@@ -186,7 +217,11 @@ def _filter_by_intermolecular_dist(
     for candidate in sites[1:]:
         too_close = False
         for existing in kept:
-            d = np.linalg.norm(candidate.cart_coords - existing.cart_coords)
+            d = (
+                lattice.get_distance_and_image(candidate.frac_coords, existing.frac_coords)[0]
+                if lattice is not None
+                else np.linalg.norm(candidate.cart_coords - existing.cart_coords)
+            )
             if d < min_dist:
                 too_close = True
                 break
