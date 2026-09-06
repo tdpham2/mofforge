@@ -272,6 +272,32 @@ def _fix_cross_boundary_attrs(crystal: Crystal) -> None:
                 crystal.bonds[u][v]["cross_boundary"] = False
 
 
+def _validate_non_overlapping_locations(match: MatchResult, locations: list[int]) -> None:
+    """Reject selected match locations that share atoms in the parent crystal."""
+    atom_locations: dict[int, list[int]] = {}
+    for location in locations:
+        parent_atoms = set(match.isomorphisms[location][0].values())
+        for atom_index in parent_atoms:
+            atom_locations.setdefault(atom_index, []).append(location)
+
+    overlaps = {
+        atom_index: location_ids
+        for atom_index, location_ids in sorted(atom_locations.items())
+        if len(location_ids) > 1
+    }
+    if not overlaps:
+        return
+
+    details = "; ".join(
+        f"parent atom {atom_index}: locations {location_ids}"
+        for atom_index, location_ids in overlaps.items()
+    )
+    raise ValueError(
+        "Selected replacement locations overlap on parent atoms "
+        f"({details}). Select atom-disjoint locations."
+    )
+
+
 def replace_pattern(
     match: MatchResult,
     replacement: Crystal | None,
@@ -299,6 +325,13 @@ def replace_pattern(
         - ``nb_loc=N``: N random locations.
         - ``loc=[...]``: specific locations.
         - ``loc=[...], ori=[...]``: specific location+orientation pairs.
+
+    Raises
+    ------
+    ValueError
+        If selected locations overlap on one or more parent atoms. Replacement
+        locations must be atom-disjoint because overlapping installations cannot
+        be applied without changing the requested replacement semantics.
     """
     random_seed = effective_seed(random_seed)
     rng = pyrandom.Random(random_seed)
@@ -383,6 +416,9 @@ def replace_pattern(
 
     if nb_loc < 0:
         raise ValueError("nb_loc must be nonnegative.")
+
+    _validate_non_overlapping_locations(match, loc)
+
     # Generate configuration tuples
     configs = [(loc[i], ori[i]) for i in range(len(loc))]
 

@@ -5,6 +5,21 @@ import pytest
 from tests.conftest import CRYSTAL_DIR, MOIETY_DIR
 
 
+def _linear_carbon_structure(n_atoms, bonds):
+    """Create a small bonded carbon structure for replacement regressions."""
+    import numpy as np
+
+    from mofforge.core.crystal import Crystal
+
+    crystal = Crystal.from_xyz(
+        ["C"] * n_atoms,
+        np.array([[float(i), 0.0, 0.0] for i in range(n_atoms)]),
+    )
+    for left, right in bonds:
+        crystal.bonds.add_edge(left, right, distance=1.0, cross_boundary=False)
+    return crystal
+
+
 class TestPatternReplacement:
     """Tests for replace_pattern on real crystal structures."""
 
@@ -96,6 +111,77 @@ class TestPatternReplacement:
         if search.nb_locations() > 0:
             with pytest.raises(ValueError, match="too large"):
                 replace_pattern(search, replacement)
+
+
+class TestOverlappingReplacementLocations:
+    """Overlapping matches must not silently corrupt replacement output."""
+
+    @staticmethod
+    def _overlapping_search():
+        from mofforge.search.search import find_pattern
+
+        parent = _linear_carbon_structure(3, [(0, 1), (1, 2)])
+        query = _linear_carbon_structure(2, [(0, 1)])
+        return parent, query, find_pattern(query, parent)
+
+    def test_default_all_locations_rejects_overlap(self):
+        """Default replacement should reject overlapping match locations."""
+        from mofforge.replace.replace import replace_pattern
+
+        _parent, query, search = self._overlapping_search()
+
+        with pytest.raises(ValueError, match=r"overlap.*parent atom 1.*locations \[0, 1\]"):
+            replace_pattern(search, query)
+
+    def test_explicit_overlapping_locations_rejects_overlap(self):
+        """Explicit overlapping selections should report the conflicting sites."""
+        from mofforge.replace.replace import replace_pattern
+
+        _parent, query, search = self._overlapping_search()
+
+        with pytest.raises(ValueError, match=r"parent atom 1: locations \[0, 1\]"):
+            replace_pattern(search, query, loc=[0, 1])
+
+    def test_duplicate_location_rejects_overlap(self):
+        """Selecting one location twice is also an overlapping replacement."""
+        from mofforge.replace.replace import replace_pattern
+
+        _parent, query, search = self._overlapping_search()
+
+        with pytest.raises(ValueError, match=r"locations \[0, 0\]"):
+            replace_pattern(search, query, loc=[0, 0])
+
+    def test_single_overlapping_candidate_can_be_selected(self):
+        """One location from an overlapping candidate set remains valid."""
+        from mofforge.replace.replace import replace_pattern
+
+        parent, query, search = self._overlapping_search()
+
+        child = replace_pattern(search, query, loc=[0])
+
+        assert child.n_atoms == parent.n_atoms
+        assert child.n_bonds == parent.n_bonds
+        assert len(list(child.bonds.neighbors(1))) > 0
+
+    def test_disjoint_locations_are_replaced_together(self):
+        """Multiple atom-disjoint matches should retain existing behavior."""
+        import networkx as nx
+
+        from mofforge.replace.replace import replace_pattern
+        from mofforge.search.search import find_pattern
+
+        parent = _linear_carbon_structure(4, [(0, 1), (2, 3)])
+        query = _linear_carbon_structure(2, [(0, 1)])
+        search = find_pattern(query, parent)
+
+        child = replace_pattern(search, query)
+
+        assert child.n_atoms == parent.n_atoms
+        assert child.n_bonds == parent.n_bonds
+        component_sizes = sorted(
+            len(component) for component in nx.connected_components(child.bonds)
+        )
+        assert component_sizes == [2, 2]
 
 
 class TestReassemble:
