@@ -400,7 +400,9 @@ def build_cmd(backend, topology, node, edge, output_dir, tobacco_data_dir, tobac
 
     click.echo(f"Building MOF with {backend} backend (topology={topology})")
 
-    result = builder.build(topology=topology, output_dir=output_dir, verbose=verbose)
+    # TOBACCO exposes its own verbosity option; Pormake uses CLI logging.
+    build_options = {"verbose": verbose} if backend == "tobacco" else {}
+    result = builder.build(topology=topology, output_dir=output_dir, **build_options)
 
     if result.success:
         click.echo(f"Build succeeded in {result.elapsed_seconds}s")
