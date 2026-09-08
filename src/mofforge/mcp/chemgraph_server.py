@@ -200,7 +200,10 @@ def build_server(
 
     @selected_tool(
         name="mofforge_screen_coremof",
-        description="Screen CoRE MOFs by pore size, density, stability, metal, topology, OMS.",
+        description=(
+            "Screen CoRE MOFs by pore size, density, accessible surface area, void "
+            "fraction, stability, metal, topology, OMS, and processing variant."
+        ),
     )
     def mofforge_screen_coremof(
         lcd_min: float | None = None,
@@ -209,15 +212,20 @@ def build_server(
         pld_max: float | None = None,
         density_min: float | None = None,
         density_max: float | None = None,
+        asa_min: float | None = None,
+        asa_max: float | None = None,
         void_fraction_min: float | None = None,
+        void_fraction_max: float | None = None,
         water_stability_min: float | None = None,
         thermal_stability_min: float | None = None,
         metal: str | None = None,
         topology: str | None = None,
         has_oms: bool | None = None,
+        extension: str | None = None,
         limit: int = 50,
         data_path: str | None = None,
     ) -> dict:
+        """Screen MOFs; ``extension`` filters the CoRE MOF processing variant."""
         return _impl.screen_coremof_impl(
             lcd_min=lcd_min,
             lcd_max=lcd_max,
@@ -225,12 +233,16 @@ def build_server(
             pld_max=pld_max,
             density_min=density_min,
             density_max=density_max,
+            asa_min=asa_min,
+            asa_max=asa_max,
             void_fraction_min=void_fraction_min,
+            void_fraction_max=void_fraction_max,
             water_stability_min=water_stability_min,
             thermal_stability_min=thermal_stability_min,
             metal=metal,
             topology=topology,
             has_oms=has_oms,
+            extension=extension,
             limit=limit,
             data_path=data_path,
         )

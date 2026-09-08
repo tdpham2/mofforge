@@ -322,14 +322,16 @@ def replace_pattern(
     Replacement modes:
         - Default: all locations, optimal orientation at each.
         - ``random=True``: all locations, random orientation at each.
-        - ``nb_loc=N``: N random locations.
+        - ``nb_loc=N``: exactly N random locations; raises if too few are available.
         - ``loc=[...]``: specific locations.
         - ``loc=[...], ori=[...]``: specific location+orientation pairs.
 
     Raises
     ------
     ValueError
-        If selected locations overlap on one or more parent atoms. Replacement
+        If ``nb_loc`` requests more locations than have available orientations,
+        or a generated supercell cannot preserve the selected count.
+        Also raised if selected locations overlap on one or more parent atoms. Replacement
         locations must be atom-disjoint because overlapping installations cannot
         be applied without changing the requested replacement semantics.
     """
@@ -366,7 +368,12 @@ def replace_pattern(
 
     elif nb_loc > 0 and not loc and not ori:
         # Random locations
-        loc = rng.sample(valid_locs, min(nb_loc, len(valid_locs)))
+        if nb_loc > len(valid_locs):
+            raise ValueError(
+                f"Requested {nb_loc} replacement locations, but only "
+                f"{len(valid_locs)} valid locations are available."
+            )
+        loc = rng.sample(valid_locs, nb_loc)
         if random:
             ori = [rng.randint(0, ori_counts[i] - 1) for i in loc]
             if verbose:
@@ -555,13 +562,10 @@ def _handle_supercell(
     nb_loc = len(configs)
     n_super_locations = new_match.nb_locations()
     if nb_loc > n_super_locations:
-        logger.warning(
-            "Requested %d locations but supercell only has %d; replacing at %d locations.",
-            nb_loc,
-            n_super_locations,
-            n_super_locations,
+        raise ValueError(
+            f"Requested {nb_loc} replacement locations, but only "
+            f"{n_super_locations} locations are available in the generated supercell."
         )
-    nb_loc = min(nb_loc, n_super_locations)
     new_configs = [(loc_id, None) for loc_id in range(nb_loc)]
 
     # Re-do replacement without auto_supercell to avoid recursion

@@ -96,11 +96,15 @@ mofforge replace -p PARENT -q QUERY -r REPLACEMENT [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-o, --output TEXT` | `new_xtal.cif` | Output CIF file path |
-| `--nb-loc INTEGER` | `0` (all) | Number of random locations to replace |
+| `--nb-loc INTEGER` | `0` (all) | Exact number of random locations to replace |
 | `--random` | off | Use random orientations instead of optimal |
 | `--validate` | off | Run structure validation on the output |
 | `--fragment-path TEXT` | query's directory | Directory containing fragment XYZ files |
 | `-v, --verbose` | off | Enable verbose output |
+
+If `--nb-loc` exceeds the available locations, the command exits with an error
+showing the requested and available counts, without writing an output structure
+or manifest. The default `0` selects all available locations.
 
 **Examples:**
 
@@ -310,7 +314,11 @@ fragment_path: ./data/fragments
 |------|-------------|
 | `all_optimal` (default) | All locations, optimal orientation |
 | `random` | All locations, random orientation |
-| `nb_loc_N` | N random locations (e.g., `nb_loc_6`) |
+| `nb_loc_N` | Exactly N random locations (e.g., `nb_loc_6`); fails if too few are available |
+
+An oversized `nb_loc_N` request marks that parent as failed and records the
+requested and available counts in its error. It produces no output structure
+or manifest for that parent; other parents continue through the batch.
 
 **Examples:**
 

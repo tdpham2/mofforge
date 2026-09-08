@@ -239,6 +239,13 @@ child = replace_pattern(match, replacement, nb_loc=4, random=True)
 Explicit location and orientation indices are zero-based. `ori=[0]` selects the
 first mapping at its location; omit `ori` to choose the optimal alignment.
 
+`nb_loc=N` requests exactly N random locations with available orientations.
+If fewer are available, `replace_pattern` raises `ValueError` with the requested
+and available counts. This also applies to deletion and to a supercell fallback
+that cannot preserve the selected count. Previously these requests could produce
+fewer replacements than requested. Use `nb_loc=0` to select all available locations.
+Explicit `loc` selections continue to take precedence over `nb_loc`.
+
 ### Replacing with Nothing (Deletion)
 
 To delete matched substructures, pass `None` as the replacement:
@@ -264,7 +271,7 @@ child = swap(parent, query, replacement, nb_loc=6)
 | `match` | `MatchResult` | required | Search results |
 | `replacement` | `Crystal` or `None` | required | Replacement fragment, or `None` to delete |
 | `random` | `bool` | `False` | Use random orientations |
-| `nb_loc` | `int` | `0` | Number of random locations (0 = all) |
+| `nb_loc` | `int` | `0` | Exact number of random locations (0 = all); raises if too few are available |
 | `loc` | `list[int]` | `None` | Specific location indices |
 | `ori` | `list[int]` | `None` | Specific orientation indices (one per loc) |
 | `name` | `str` | `"new_xtal"` | Name for the output crystal |

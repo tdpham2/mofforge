@@ -66,6 +66,68 @@ def test_pipeline_seed_is_repeatable(crystal_dir, moiety_dir):
     assert first.provenance.validation == pipeline.validation_reports[0].to_dict()
 
 
+@pytest.mark.parametrize("interface", ["cli", "mcp", "pipeline", "batch"])
+def test_oversized_replacement_fails_without_artifacts(
+    interface, tmp_path, crystal_dir, moiety_dir
+):
+    if interface == "mcp":
+        pytest.importorskip("mcp")
+
+    parent = crystal_dir / "IRMOF-1.cif"
+    query = moiety_dir / "2-!-p-phenylene.xyz"
+    replacement = moiety_dir / "2-nitro-p-phenylene.xyz"
+    output = tmp_path / "outputs" / "modified.cif"
+    output.parent.mkdir()
+    expected = "Requested 25 replacement locations, but only 24 valid locations are available."
+    parent_hash = file_hash(parent)
+
+    if interface == "cli":
+        result = CliRunner().invoke(main, [
+            "replace", "-p", str(parent), "-q", str(query), "-r", str(replacement),
+            "-o", str(output), "--nb-loc", "25",
+        ])
+        assert result.exit_code == 1
+        assert f"Error: {expected}" in result.output
+        assert "Output written" not in result.output
+    elif interface == "mcp":
+        import asyncio
+
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        from mofforge.mcp.server import build_server
+
+        server = build_server({"mofforge_replace"})
+        with pytest.raises(ToolError) as error:
+            asyncio.run(server.call_tool("mofforge_replace", {
+                "parent_cif": str(parent), "query_xyz": str(query),
+                "replacement_xyz": str(replacement), "output_cif": str(output), "nb_loc": 25,
+            }))
+        assert expected in str(error.value)
+    elif interface == "pipeline":
+        pipeline = Pipeline(parent, fragment_path=moiety_dir)
+        pipeline.replace(query=query.name, replacement=replacement.name, nb_loc=25)
+        with pytest.raises(ValueError) as error:
+            pipeline.build().write_cif(output)
+        assert str(error.value) == expected
+    else:
+        config = tmp_path / "batch.yaml"
+        config.write_text(yaml.safe_dump({
+            "parents": [str(parent)], "moiety_path": str(moiety_dir),
+            "operations": [{"type": "replace", "query": query.name,
+                            "replacement": replacement.name, "mode": "nb_loc_25"}],
+            "output": {"directory": str(output.parent)},
+        }))
+        results = run_batch(config)
+        assert len(results) == 1
+        assert not results[0].success
+        assert results[0].error == expected
+        assert results[0].output_path is None
+
+    assert not list(tmp_path.rglob("*.cif"))
+    assert not list(tmp_path.rglob("*.json"))
+    assert file_hash(parent) == parent_hash
+
+
 def test_batch_parallel_is_repeatable_and_names_do_not_collide(tmp_path, crystal_dir, moiety_dir):
     parents = []
     for folder in ("a", "b"):
