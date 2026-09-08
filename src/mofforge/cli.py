@@ -83,7 +83,10 @@ def search(parent, query, disconnected, fragment_path, verbose):
 @click.option("-q", "--query", required=True, help="Path to query fragment XYZ file.")
 @click.option("-r", "--replacement", required=True, help="Path to replacement fragment XYZ file.")
 @click.option("-o", "--output", default="new_xtal.cif", help="Output CIF file path.")
-@click.option("--nb-loc", default=0, type=int, help="Number of random locations.")
+@click.option(
+    "--nb-loc", default=0, type=int,
+    help="Exact number of random locations (0 = all); fails if too few are available.",
+)
 @click.option("--random", "use_random", is_flag=True, help="Use random orientations.")
 @click.option("--random-seed", type=int, default=None, help="Seed for reproducible replacement.")
 @click.option("--validate", "do_validate", is_flag=True, help="Validate output structure.")
@@ -122,7 +125,10 @@ def replace_cmd(
     if use_random:
         kwargs["random"] = True
 
-    child = replace_pattern(result, r, **kwargs)
+    try:
+        child = replace_pattern(result, r, **kwargs)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     child.write_cif(output)
     click.echo(f"Output written to: {output}")
     click.echo(f"  Atoms: {child.n_atoms}, Bonds: {child.n_bonds}")

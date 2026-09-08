@@ -184,6 +184,100 @@ class TestOverlappingReplacementLocations:
         assert component_sizes == [2, 2]
 
 
+@pytest.fixture
+def disjoint_match():
+    from mofforge.search.search import find_pattern
+
+    parent = _linear_carbon_structure(7, [(0, 1), (2, 3), (4, 5)])
+    query = _linear_carbon_structure(2, [(0, 1)])
+    return find_pattern(query, parent)
+
+
+@pytest.mark.parametrize("use_random", [False, True])
+@pytest.mark.parametrize("delete", [False, True])
+@pytest.mark.parametrize(("empty_locations", "requested", "available"), [
+    (None, 5, 3),
+    ([], 1, 0),
+    ([1], 3, 2),
+    ([0, 1, 2], 1, 0),
+])
+def test_oversized_replacement_rejected(
+    disjoint_match, use_random, delete, empty_locations, requested, available
+):
+    from mofforge.provenance import structure_hash
+    from mofforge.replace.replace import replace_pattern
+
+    if empty_locations == []:
+        disjoint_match.isomorphisms = []
+    elif empty_locations is not None:
+        for location in empty_locations:
+            disjoint_match.isomorphisms[location] = []
+    parent_hash = structure_hash(disjoint_match.parent)
+    replacement = None if delete else disjoint_match.query
+
+    with pytest.raises(
+        ValueError,
+        match=rf"Requested {requested} replacement locations, but only {available} valid locations",
+    ):
+        replace_pattern(disjoint_match, replacement, nb_loc=requested,
+                        random=use_random, random_seed=17)
+
+    assert structure_hash(disjoint_match.parent) == parent_hash
+    assert disjoint_match.parent.provenance is None
+
+
+@pytest.mark.parametrize("use_random", [False, True])
+@pytest.mark.parametrize("delete", [False, True])
+@pytest.mark.parametrize("requested", [0, 2, 3])
+def test_replacement_count_is_exact(disjoint_match, use_random, delete, requested):
+    from mofforge.replace.replace import replace_pattern
+
+    child = replace_pattern(disjoint_match, None if delete else disjoint_match.query,
+                            nb_loc=requested, random=use_random, random_seed=17)
+
+    expected = requested or 3
+    assert len(child.provenance.parameters["locations"]) == expected
+    assert child.n_atoms == disjoint_match.parent.n_atoms - (2 * expected if delete else 0)
+
+
+def test_explicit_locations_keep_precedence_over_count(disjoint_match):
+    from mofforge.replace.replace import replace_pattern
+
+    child = replace_pattern(disjoint_match, disjoint_match.query, nb_loc=5, loc=[1], ori=[0])
+
+    assert child.provenance.parameters["locations"] == [1]
+
+
+@pytest.mark.parametrize("available", [0, 2])
+def test_supercell_rejects_replacement_shortfall(disjoint_match, monkeypatch, available):
+    import importlib
+    from unittest.mock import Mock
+
+    from mofforge.provenance import structure_hash
+    from mofforge.search.search import MatchResult
+
+    replacement_module = importlib.import_module("mofforge.replace.replace")
+    parent_hash = structure_hash(disjoint_match.parent)
+
+    def find_fewer_matches(query, parent):
+        return MatchResult(parent, query, disjoint_match.isomorphisms[:available])
+
+    monkeypatch.setattr(replacement_module, "find_pattern", find_fewer_matches)
+    install = Mock(return_value=disjoint_match.parent.copy())
+    monkeypatch.setattr(replacement_module, "effect_replacements", install)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"Requested 3 replacement locations, but only {available}.*supercell",
+    ):
+        replacement_module._handle_supercell(
+            disjoint_match, disjoint_match.query, [(0, None), (1, None), (2, None)], "expanded"
+        )
+
+    install.assert_not_called()
+    assert structure_hash(disjoint_match.parent) == parent_hash
+
+
 class TestReassemble:
     """Tests for periodic boundary reassembly."""
 
