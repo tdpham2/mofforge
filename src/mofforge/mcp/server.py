@@ -579,6 +579,86 @@ def mofforge_list_building_blocks(
 
 
 @_tool(
+    name="mofforge_polymerize",
+    description=(
+        "Generate an amorphous porous organic polymer (CMP / PIM / HCP) from "
+        "reactive monomers by simulated polymerization.  Monomers are given as "
+        "SMILES; the network is packed (Packmol), bonded (Polymatic), and "
+        "relaxed (LAMMPS) via pysimm, then written as a P1 CIF.  Requires the "
+        "Packmol and LAMMPS binaries."
+    ),
+    capability="pop",
+)
+def mofforge_polymerize(
+    monomers: list[str],
+    functionality: list[int] | None = None,
+    target_density: float = 0.8,
+    forcefield: str = "gaff2",
+    target_conversion: float = 0.95,
+    n_monomers: int | None = None,
+    equilibrate: bool = True,
+    output_dir: str = ".",
+    random_seed: int | None = None,
+) -> str:
+    """Generate an amorphous porous organic polymer.
+
+    Parameters
+    ----------
+    monomers : list[str]
+        Monomer SMILES.  Reactive sites are detected automatically
+        (see mofforge_list_reactions for the curated groups and reactions).
+    functionality : list[int] or None
+        Number of reactive sites per monomer (2 = linear, >=3 = network).
+        One entry per monomer, or None to detect from the SMILES.
+    target_density : float
+        Target mass density in g/cm^3 (sizes the packing box).
+    forcefield : str
+        pysimm force field: "gaff2", "dreiding", or "pcff".
+    target_conversion : float
+        Fraction of reactive sites to consume (0-1).
+    n_monomers : int or None
+        Total monomers to pack; None uses an engine default.
+    equilibrate : bool
+        Run compression/decompression equilibration after bonding.
+    output_dir : str
+        Output directory for the CIF and manifest.
+    random_seed : int or None
+        Seed for reproducible geometry and packing.
+    """
+    from mofforge.mcp._impl import polymerize_impl
+
+    return json.dumps(
+        polymerize_impl(
+            monomers,
+            functionality=functionality,
+            target_density=target_density,
+            forcefield=forcefield,
+            target_conversion=target_conversion,
+            n_monomers=n_monomers,
+            equilibrate=equilibrate,
+            output_dir=output_dir,
+            random_seed=random_seed,
+        ),
+        indent=2,
+    )
+
+
+@_tool(
+    name="mofforge_list_reactions",
+    description=(
+        "List the curated reactive site types (amine, aldehyde, aryl halide, "
+        "...) and the compatible reactions used by mofforge_polymerize."
+    ),
+    capability="pop",
+)
+def mofforge_list_reactions() -> str:
+    """List reactive site types and compatible reactions for polymerization."""
+    from mofforge.mcp._impl import list_reactions_impl
+
+    return json.dumps(list_reactions_impl(), indent=2)
+
+
+@_tool(
     name="mofforge_search_coremof",
     description=(
         "Search the CoRE MOF database of simulation-ready MOF structures.  "
@@ -1093,6 +1173,8 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
         capabilities.append("linker functionalization")
     if enabled & {"mofforge_place_adsorbate", "mofforge_list_adsorbates"}:
         capabilities.append("adsorbate placement")
+    if enabled & {"mofforge_polymerize", "mofforge_list_reactions"}:
+        capabilities.append("amorphous polymer (POP) generation")
     if "mofforge_validate" in enabled:
         capabilities.append("structure validation")
 
@@ -1121,6 +1203,11 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
         guidance.append(
             "- Typical functionalization workflow: mofforge_find_sites, "
             "mofforge_list_functional_groups, then mofforge_functionalize."
+        )
+    if {"mofforge_list_reactions", "mofforge_polymerize"} <= enabled:
+        guidance.append(
+            "- Typical polymer workflow: mofforge_list_reactions, then "
+            "mofforge_polymerize with monomer SMILES."
         )
     if "mofforge_validate" in enabled:
         guidance.append("- Call mofforge_validate after modifications.")

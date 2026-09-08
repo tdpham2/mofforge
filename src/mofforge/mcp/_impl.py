@@ -32,10 +32,12 @@ __all__ = [
     "list_adsorbates_impl",
     "list_fragments_impl",
     "list_functional_groups_impl",
+    "list_reactions_impl",
     "load_crystal",
     "load_fragment",
     "lookup_mof_impl",
     "place_adsorbate_impl",
+    "polymerize_impl",
     "render_impl",
     "resolve_output",
     "screen_coremof_impl",
@@ -652,6 +654,91 @@ def functionalize_campaign_impl(
         }
     except Exception as exc:
         logger.warning("functionalize_campaign failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Amorphous polymer (POP) generation
+# ---------------------------------------------------------------------------
+
+
+def list_reactions_impl() -> dict[str, Any]:
+    """List the curated reactive site types and compatible reactions."""
+    try:
+        from mofforge.polymerize.reactions import available_reactions, available_site_types
+
+        return {
+            "success": True,
+            "site_types": available_site_types(),
+            "reactions": available_reactions(),
+        }
+    except Exception as exc:
+        logger.warning("list_reactions failed", exc_info=True)
+        return {"success": False, "error": str(exc)}
+
+
+def polymerize_impl(
+    monomers: list[str],
+    functionality: list[int] | None = None,
+    target_density: float = 0.8,
+    forcefield: str = "gaff2",
+    target_conversion: float = 0.95,
+    n_monomers: int | None = None,
+    equilibrate: bool = True,
+    output_dir: str = ".",
+    random_seed: int | None = None,
+) -> dict[str, Any]:
+    """Generate an amorphous porous organic polymer via simulated polymerization.
+
+    Wraps pysimm (Packmol packing + Polymatic bond formation + LAMMPS MD).
+    Requires the ``pop`` extra plus the Packmol and LAMMPS binaries.
+    """
+    try:
+        from mofforge.polymerize import PopBuilder
+
+        if not monomers:
+            return {"success": False, "error": "At least one monomer is required."}
+        if functionality is not None and len(functionality) != len(monomers):
+            return {
+                "success": False,
+                "error": "functionality must have one entry per monomer.",
+            }
+
+        builder = PopBuilder()
+        for i, smiles in enumerate(monomers):
+            func = functionality[i] if functionality is not None else None
+            builder.add_monomer(smiles, functionality=func)
+
+        out = resolve_output(os.path.join(output_dir, "placeholder.cif"))
+        out_dir = str(Path(out).parent)
+
+        result = builder.build(
+            output_dir=out_dir,
+            target_density=target_density,
+            forcefield=forcefield,
+            target_conversion=target_conversion,
+            n_monomers=n_monomers,
+            equilibrate=equilibrate,
+            random_seed=random_seed,
+        )
+
+        if result.success:
+            return {
+                "success": True,
+                "backend": result.backend,
+                "elapsed_seconds": result.elapsed_seconds,
+                "output_paths": [str(p) for p in result.output_paths],
+                "atoms": result.crystal.n_atoms if result.crystal else None,
+                "metadata": result.metadata,
+                "validation": result.validation.to_dict() if result.validation else None,
+            }
+        return {
+            "success": False,
+            "backend": result.backend,
+            "errors": result.errors,
+        }
+    except Exception as exc:
+        logger.warning("polymerize failed", exc_info=True)
         return {"success": False, "error": str(exc)}
 
 

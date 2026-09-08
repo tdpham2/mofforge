@@ -506,6 +506,105 @@ def build_list_cmd(backend, list_type, tobacco_data_dir, tobacco_path, verbose):
         click.echo(f"  {item}")
 
 
+@main.command("polymerize")
+@click.option(
+    "-m",
+    "--monomer",
+    "monomers",
+    multiple=True,
+    required=True,
+    help="Monomer SMILES (repeatable).",
+)
+@click.option(
+    "--functionality",
+    "functionalities",
+    multiple=True,
+    type=int,
+    help="Reactive-site count per monomer (repeatable; one per --monomer).",
+)
+@click.option("--target-density", default=0.8, type=float, help="Target density in g/cm^3.")
+@click.option(
+    "--forcefield",
+    type=click.Choice(["gaff2", "dreiding", "pcff"]),
+    default="gaff2",
+    help="pysimm force field.",
+)
+@click.option("--target-conversion", default=0.95, type=float, help="Fraction of sites to consume.")
+@click.option("--n-monomers", default=None, type=int, help="Total monomers to pack.")
+@click.option("--equilibrate/--no-equilibrate", default=True, help="Run MD equilibration.")
+@click.option("-o", "--output", "output_dir", default=".", help="Output directory.")
+@click.option("--random-seed", default=None, type=int, help="Seed for reproducibility.")
+@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
+def polymerize_cmd(
+    monomers,
+    functionalities,
+    target_density,
+    forcefield,
+    target_conversion,
+    n_monomers,
+    equilibrate,
+    output_dir,
+    random_seed,
+    verbose,
+):
+    """Generate an amorphous porous organic polymer from monomer SMILES."""
+    _setup_logging(verbose)
+
+    from mofforge.polymerize import PopBuilder
+
+    if functionalities and len(functionalities) != len(monomers):
+        click.echo("Error: --functionality must be given once per --monomer.", err=True)
+        sys.exit(1)
+
+    builder = PopBuilder()
+    for i, smiles in enumerate(monomers):
+        func = functionalities[i] if functionalities else None
+        builder.add_monomer(smiles, functionality=func)
+
+    click.echo(f"Polymerizing {len(monomers)} monomer type(s) (forcefield={forcefield})")
+    result = builder.build(
+        output_dir=output_dir,
+        target_density=target_density,
+        forcefield=forcefield,
+        target_conversion=target_conversion,
+        n_monomers=n_monomers,
+        equilibrate=equilibrate,
+        random_seed=random_seed,
+    )
+
+    if result.success:
+        click.echo(f"Polymerization succeeded in {result.elapsed_seconds}s")
+        for p in result.output_paths:
+            click.echo(f"  Output: {p}")
+        if result.crystal:
+            click.echo(f"  Atoms: {result.crystal.n_atoms}  Bonds: {result.crystal.n_bonds}")
+        if result.metadata.get("box_length"):
+            click.echo(f"  Box length: {result.metadata['box_length']} A")
+    else:
+        click.echo("Polymerization failed:")
+        for err in result.errors:
+            click.echo(f"  {err}")
+        sys.exit(1)
+
+
+@main.command("pop-doctor")
+@click.option("--as-json", is_flag=True, help="Emit the report as JSON.")
+def pop_doctor_cmd(as_json):
+    """Report POP dependency and binary availability (pysimm, Packmol, LAMMPS)."""
+    import json as _json
+
+    from mofforge.polymerize.config import doctor
+
+    report = doctor()
+    if as_json:
+        click.echo(_json.dumps(report, indent=2))
+        return
+    for tool, info in report.items():
+        status = "available" if info.get("available") else "MISSING"
+        detail = info.get("path") or info.get("error", "")
+        click.echo(f"{tool:10s} {status:10s} {detail}")
+
+
 @main.command("csd")
 @click.argument("query")
 @click.option(
