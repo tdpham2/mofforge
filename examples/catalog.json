@@ -280,5 +280,14 @@
     "topic": "Complete workflows",
     "guide": "workflows/README.md",
     "requires": []
+  },
+  {
+    "script": "polymerize/amorphous_pop.py",
+    "title": "Prepare an amorphous POP build",
+    "topic": "Polymerization",
+    "guide": "polymerize/README.md",
+    "requires": [
+      "rdkit"
+    ]
   }
 ]

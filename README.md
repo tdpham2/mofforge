@@ -49,6 +49,16 @@ file integrity and recorded batch inputs with `mofforge verify <artifact> --json
 - Unified `MOFBuilder` API across both backends
 - Support for carboxylate, direct, and carboxylic connection modes
 
+### Amorphous Polymer Generation
+
+- Build porous organic polymers (CMPs, PIMs, HCPs) by simulated polymerization
+  via [pysimm](https://pysimm.org) (Packmol packing + Polymatic bond formation +
+  LAMMPS relaxation)
+- Curated reactive-site detection (amine, aldehyde, aryl halide, boronic acid,
+  vinyl, ...) and compatible-reaction table (imine, aryl-aryl, boroxine, ...)
+- Unified `PopBuilder` API; output as a validated P1 CIF with provenance
+- Packmol and LAMMPS resolved at run time (config / env / PATH); `mofforge pop-doctor` reports availability
+
 ### Adsorbate Placement
 
 - Automatic adsorption site detection (void sites via 3D grid sampling, open-metal sites via coordination analysis)
@@ -59,7 +69,7 @@ file integrity and recorded batch inputs with `mofforge verify <artifact> --json
 ### Visualization & AI Integration
 
 - Structure rendering to PNG via 3Dmol.js + Playwright (ball-stick, stick, sphere representations)
-- MCP (Model Context Protocol) server exposing 23 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
+- MCP (Model Context Protocol) server exposing 25 tools for AI agent integration (search/replace, build, polymerize, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
 - Optional [ChemGraph](https://github.com/argonne-lcf/ChemGraph) integration -- an HPC-aware `CGFastMCP` server for backend execution and ensemble fan-out (see [docs/chemgraph.md](docs/chemgraph.md))
 - Atom labels, unit cell edges, chemical formula overlay
 
@@ -99,6 +109,7 @@ Optional dependencies for specific features:
 pip install mofforge[build]   # Pormake + TOBACCO (tested with Python 3.11)
 pip install mofforge[vis]     # PNG rendering (Playwright)
 pip install mofforge[chem]    # SMILES conversion (RDKit)
+pip install mofforge[pop]     # amorphous polymer generation (pysimm + RDKit; needs Packmol & LAMMPS binaries)
 pip install mofforge[mcp]     # MCP server for AI agents
 pip install mofforge[all]     # everything above
 ```
