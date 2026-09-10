@@ -506,6 +506,96 @@ def build_list_cmd(backend, list_type, tobacco_data_dir, tobacco_path, verbose):
         click.echo(f"  {item}")
 
 
+def _removed_pop_option(ctx, param, value):
+    if value is not None:
+        from mofforge.polymerize.base import reject_removed
+
+        try:
+            reject_removed({param.name: value})
+        except TypeError as exc:
+            raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
+    return value
+
+
+def _pop_options(function):
+    for option in ("target-density", "forcefield", "md-settings", "n-monomers"):
+        function = click.option(
+            "--" + option, hidden=True, default=None, is_eager=True,
+            expose_value=False, callback=_removed_pop_option,
+        )(function)
+    function = click.option(
+        "--equilibrate/--no-equilibrate", hidden=True, default=None, is_eager=True,
+        expose_value=False, callback=_removed_pop_option,
+    )(function)
+    function = click.option(
+        "--config", "config_path", type=click.Path(exists=True, dir_okay=False), required=True,
+        help="JSON box configuration: explicit component counts and packing/connection options.",
+    )(function)
+    function = click.option("-o", "--output", "output_dir", default=".")(function)
+    function = click.option(
+        "--as-json", is_flag=True, help="Emit complete results, including partial states."
+    )(function)
+    return function
+
+
+def _run_pop_cli(config_path, output_dir, as_json, operation):
+    import json
+
+    from mofforge.polymerize import run_config
+
+    try:
+        config = json.loads(Path(config_path).read_text())
+        result = run_config(config, operation=operation, output_dir=output_dir).to_dict()
+    except (ValueError, TypeError, KeyError, OSError, ImportError) as exc:
+        result = {
+            "success": False, "operation": operation, "status": "failed", "errors": [str(exc)]
+        }
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"{operation}: {result['status']}")
+        if "conversion" in result.get("metadata", {}):
+            click.echo(f"Conversion: {result['metadata']['conversion']:.3f}")
+        for path in result.get("output_paths", []):
+            click.echo(f"Output: {path}")
+        for error in result.get("errors", []):
+            click.echo(error, err=True)
+    if not result["success"]:
+        raise click.exceptions.Exit(1)
+
+
+@main.command("pack")
+@_pop_options
+def pack_cmd(config_path, output_dir, as_json):
+    """Pack counted molecules using Packmol; export topology and diagnostics."""
+    _run_pop_cli(config_path, output_dir, as_json, "pack")
+
+
+@main.command("polymerize")
+@_pop_options
+def polymerize_cmd(config_path, output_dir, as_json):
+    """Construct explicit connections, optionally packing first. Runs no MD."""
+    _run_pop_cli(config_path, output_dir, as_json, "connect")
+
+
+@main.command("pop-doctor")
+@click.option("--as-json", is_flag=True, help="Emit the report as JSON.")
+def pop_doctor_cmd(as_json):
+    """Report RDKit and Packmol availability, including periodic feature support."""
+    import json as _json
+
+    from mofforge.polymerize.config import doctor
+
+    report = doctor()
+    if as_json:
+        click.echo(_json.dumps(report, indent=2))
+        return
+    for tool, info in report.items():
+        status = "available" if info.get("available") else "MISSING"
+        detail = info.get("path") or info.get("error", "")
+        click.echo(f"{tool:10s} {status:10s} {detail}")
+
+
 @main.command("csd")
 @click.argument("query")
 @click.option(

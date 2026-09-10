@@ -579,6 +579,54 @@ def mofforge_list_building_blocks(
 
 
 @_tool(
+    name="mofforge_pack",
+    description=(
+        "Pack explicit component counts into a periodic orthorhombic box using Packmol. "
+        "config contains components and packing; choose box_lengths or initial_packing_density. "
+        "Returns native topology, CIF, XYZ and diagnostics. Requires RDKit and Packmol >=20.15.0. "
+        "Creates an initial geometry; simulation runs externally."
+    ),
+    capability="pop",
+)
+def mofforge_pack(config: dict, output_dir: str = ".") -> str:
+    """Pack molecules using the shared JSON configuration documented in docs/polymerize.md."""
+    from mofforge.mcp._impl import pack_impl
+
+    return json.dumps(pack_impl(config, output_dir), indent=2)
+
+
+@_tool(
+    name="mofforge_polymerize",
+    description=(
+        "Construct polymer connections using explicit connectors and complete graph-edit rules. "
+        "config contains components, packing and connection, or state_path and connection. "
+        "connection requires rules, target_conversion, candidate_attempt_budget, "
+        "min_nonbonded_distance. "
+        "Returns completed, partial or failed status with resumable state references. No MD is run."
+    ),
+    capability="pop",
+)
+def mofforge_polymerize(config: dict, output_dir: str = ".") -> str:
+    """Pack and connect, or resume a saved native box; simulation is external."""
+    from mofforge.mcp._impl import polymerize_impl
+
+    return json.dumps(polymerize_impl(config, output_dir), indent=2)
+
+
+@_tool(
+    name="mofforge_list_reactions",
+    description=(
+        "List optional SMARTS site annotations. No built-in construction recipes are provided."
+    ),
+)
+def mofforge_list_reactions() -> str:
+    """Describe optional site annotations and the requirement for explicit rules."""
+    from mofforge.mcp._impl import list_reactions_impl
+
+    return json.dumps(list_reactions_impl(), indent=2)
+
+
+@_tool(
     name="mofforge_search_coremof",
     description=(
         "Search the CoRE MOF database of simulation-ready MOF structures.  "
@@ -1093,6 +1141,8 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
         capabilities.append("linker functionalization")
     if enabled & {"mofforge_place_adsorbate", "mofforge_list_adsorbates"}:
         capabilities.append("adsorbate placement")
+    if enabled & {"mofforge_polymerize", "mofforge_list_reactions"}:
+        capabilities.append("amorphous polymer (POP) generation")
     if "mofforge_validate" in enabled:
         capabilities.append("structure validation")
 
@@ -1121,6 +1171,11 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
         guidance.append(
             "- Typical functionalization workflow: mofforge_find_sites, "
             "mofforge_list_functional_groups, then mofforge_functionalize."
+        )
+    if {"mofforge_list_reactions", "mofforge_polymerize"} <= enabled:
+        guidance.append(
+            "- Typical polymer workflow: mofforge_list_reactions, then "
+            "mofforge_polymerize with monomer SMILES."
         )
     if "mofforge_validate" in enabled:
         guidance.append("- Call mofforge_validate after modifications.")

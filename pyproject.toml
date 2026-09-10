@@ -54,6 +54,12 @@ build = [
 mcp = [
     "mcp[cli]>=1.16,<2",
 ]
+pop = [
+    # Explicit molecular preparation and local valence checks. Install the
+    # Packmol executable separately; simulation/MLIP dependencies belong to MatKit.
+    "rdkit",
+]
+
 chemgraph = [
     # ChemGraph CGFastMCP HPC adapter (mofforge-mcp-chemgraph entry point).
     # The CGFastMCP class lives on the dev-globus-hpc branch; install from
@@ -61,7 +67,7 @@ chemgraph = [
     "chemgraph",
 ]
 all = [
-    "mofforge[vis,chem,build,mcp]",
+    "mofforge[vis,chem,build,mcp,pop]",
 ]
 dev = [
     "pytest>=7.0",

@@ -1419,6 +1419,9 @@ dev = [
 mcp = [
     { name = "mcp", extra = ["cli"] },
 ]
+pop = [
+    { name = "rdkit" },
+]
 vis = [
     { name = "playwright" },
 ]
@@ -1428,7 +1431,7 @@ requires-dist = [
     { name = "chemgraph", marker = "extra == 'chemgraph'" },
     { name = "click", specifier = ">=8.0" },
     { name = "mcp", extras = ["cli"], marker = "extra == 'mcp'", specifier = ">=1.16,<2" },
-    { name = "mofforge", extras = ["vis", "chem", "build", "mcp"], marker = "extra == 'all'" },
+    { name = "mofforge", extras = ["vis", "chem", "build", "mcp", "pop"], marker = "extra == 'all'" },
     { name = "networkx", specifier = ">=3.0" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "playwright", marker = "extra == 'vis'" },
@@ -1438,12 +1441,13 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rdkit", marker = "extra == 'chem'" },
+    { name = "rdkit", marker = "extra == 'pop'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "tobacco3", marker = "extra == 'build'", git = "https://github.com/tdpham2/tobacco_3.0.git?rev=effe43059cfd78015db616890a6d20c090633378" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=1.0" },
 ]
-provides-extras = ["vis", "chem", "build", "mcp", "chemgraph", "all", "dev"]
+provides-extras = ["vis", "chem", "build", "mcp", "pop", "chemgraph", "all", "dev"]
 
 [[package]]
 name = "monty"

@@ -53,6 +53,29 @@ jobs:
           name: coverage-${{ matrix.name }}
           path: coverage.xml
 
+  polymer-boxes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.18'
+          enable-cache: true
+      - run: uv sync --locked --extra dev --extra pop --extra mcp
+      - run: uv pip install --python .venv/bin/python 'packmol==21.2.3'
+      - name: Required native packing, connection, and interface evidence
+        run: uv run --no-sync pytest tests/test_polymerize*.py --basetemp=/tmp/mofforge-pop-tests -v
+        env:
+          MOFFORGE_RUN_POP_TESTS: '1'
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: polymer-box-diagnostics
+          path: /tmp/mofforge-pop-tests
+
   render-examples:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

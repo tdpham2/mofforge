@@ -33,6 +33,8 @@ def capability_available(capability: str) -> bool:
         "chem": ("rdkit",),
         # Either construction backend makes the shared build tools useful.
         "build": ("pormake", "tobacco3"),
+        # Native construction uses RDKit; Packmol is checked only at packing time.
+        "pop": ("rdkit",),
     }.get(capability)
     if modules is None:
         raise ValueError(f"Unknown MCP tool capability: {capability!r}")
