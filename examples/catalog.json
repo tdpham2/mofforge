@@ -283,7 +283,7 @@
   },
   {
     "script": "polymerize/amorphous_pop.py",
-    "title": "Prepare an amorphous POP build",
+    "title": "Prepare and construct an explicit polymer box",
     "topic": "Polymerization",
     "guide": "polymerize/README.md",
     "requires": [

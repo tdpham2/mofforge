@@ -1,55 +1,44 @@
-# Generate amorphous porous organic polymers (POPs)
+# Polymer box construction
 
-Unlike MOFs and crystalline COFs, porous organic polymers (CMPs, PIMs, HCPs) are
-*amorphous* covalent networks with no periodic net. mofforge builds them by
-**simulated polymerization**: pack monomers into a box (Packmol), form covalent
-bonds between nearby reactive sites and relax under MD (Polymatic + LAMMPS), then
-equilibrate to a realistic density. The heavy lifting is delegated to
-[pysimm](https://pysimm.org); mofforge prepares the monomers, orchestrates the
-run, and converts the result into a validated P1 CIF.
-
-Use the `pop` extra (`pip install 'mofforge[pop]'`) plus the **Packmol** and
-**LAMMPS** binaries. mofforge resolves those binaries at run time from
-`MOFFORGE_PACKMOL_BIN` / `MOFFORGE_LAMMPS_BIN`, a `mofforge.toml`
-`[backends.pop]` section, or a `PATH` search.
-
-## 1. Prepare a build (rdkit only)
+Mofforge prepares explicit molecular topology, invokes Packmol, and constructs
+connections using complete graph-edit rules. Simulation runs externally in
+MatKit. The [construction guide](../../docs/polymerize.md) describes the API,
+JSON configuration, density semantics, and geometry handoff.
 
 ```bash
-python examples/polymerize/amorphous_pop.py
-python examples/polymerize/amorphous_pop.py -m "NCCN" -m "O=Cc1ccc(C=O)cc1"
+pip install 'mofforge[pop]'
+python examples/polymerize/amorphous_pop.py --output-dir pop_prepared
 ```
 
-[amorphous_pop.py](amorphous_pop.py) runs the parts that need only rdkit:
+Default mode prepares three counted benzene templates with explicit para
+connectors and writes their atom-label mapping plus `packing.json` and
+`construction.json`. It needs only RDKit. This is a generic geometry fixture,
+not a claimed chemical polymerization mechanism or material-density recipe.
+The example uses a 25 Å cubic box; the library has no default volume or density.
+You may supply `--initial-packing-density` in g/cm³ instead.
 
-1. Detect reactive sites on each monomer SMILES (a diamine and a dialdehyde by
-   default) and confirm they form a compatible pair — here an **imine (Schiff
-   base)** condensation.
-2. Generate 3-D monomer geometry (RDKit embed + UFF) and compute each monomer's
-   molar mass.
-3. Size the cubic packing box for the requested `--target-density`.
-4. Report tool availability via `doctor()` so you can see what is still needed
-   for the full run.
-
-The reactive-site menu and compatible reactions come from
-`mofforge.polymerize.reactions` — the POP analogue of the curated functional
-group menu used for linker functionalization.
-
-## 2. Run the full polymerization (Packmol + LAMMPS)
-
-Once the binaries are installed:
+To execute the native stages:
 
 ```bash
-mofforge polymerize -m "NCCN" -m "O=Cc1ccc(C=O)cc1" \
-    --target-density 0.8 --forcefield gaff2 -o pop_out --random-seed 42
-mofforge pop-doctor          # report pysimm / Packmol / LAMMPS availability
+pip install 'packmol==21.2.3'
+mofforge pop-doctor --as-json
+python examples/polymerize/amorphous_pop.py --mode pack --output-dir pop_packed
+python examples/polymerize/amorphous_pop.py --mode connect --output-dir pop_connected
 ```
 
-or through the MCP server with the `mofforge_polymerize` and
-`mofforge_list_reactions` tools (capability `pop`). Both write a P1 CIF and a
-provenance manifest, and attach a validation report (steric clashes, bond
-lengths) exactly like the MOF builders.
+The connection example deliberately stops after one candidate attempt, reloads
+its partial native state, imports an explicitly mapped translation, and resumes
+to produce a finite C18H14 chain with two new bonds. The geometry update exercises
+the handoff contract without claiming to run MD. Each saved bundle includes
+native state JSON, P1 CIF, XYZ, and a verification manifest; Packmol attempts
+also retain their input, version, stdout, stderr, and result report.
 
-**Try:** swap in a trifunctional monomer (e.g. a trialdehyde,
-`O=Cc1cc(C=O)cc(C=O)c1`) to form a cross-linked network instead of a linear
-chain, and lower `--target-density` to open up the pore structure.
+The generated configurations are shared by Python, CLI, and MCP:
+
+```bash
+mofforge pack --config pop_prepared/packing.json --output pop_cli_packed --as-json
+mofforge polymerize --config pop_prepared/construction.json --output pop_cli_connected --as-json
+```
+
+The calling workflow owns physical preparation, comparisons across seeds and
+initial densities, and subsequent adsorption or MD calculations in MatKit.
