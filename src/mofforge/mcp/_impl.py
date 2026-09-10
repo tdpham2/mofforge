@@ -663,83 +663,36 @@ def functionalize_campaign_impl(
 
 
 def list_reactions_impl() -> dict[str, Any]:
-    """List the curated reactive site types and compatible reactions."""
+    """List optional site annotations; there are no built-in reaction recipes."""
+    from mofforge.polymerize.reactions import available_site_types
+
+    return {"success": True, "site_types": available_site_types(), "reactions": [],
+            "note": "SMARTS annotations only; construction requires explicit connection rules."}
+
+
+def _box_impl(config, output_dir, operation, options):
     try:
-        from mofforge.polymerize.reactions import available_reactions, available_site_types
+        from mofforge.polymerize import run_config
+        from mofforge.polymerize.base import reject_removed
 
-        return {
-            "success": True,
-            "site_types": available_site_types(),
-            "reactions": available_reactions(),
-        }
-    except Exception as exc:
-        logger.warning("list_reactions failed", exc_info=True)
-        return {"success": False, "error": str(exc)}
+        reject_removed(options)
+        if options:
+            raise ValueError(f"Unknown box options: {sorted(options)}")
+        out = resolve_output(os.path.join(output_dir, "box-output"))
+        return run_config(config, operation=operation, output_dir=str(Path(out).parent)).to_dict()
+    except (ValueError, TypeError, KeyError, OSError, ImportError) as exc:
+        return {"success": False, "operation": operation, "status": "failed", "errors": [str(exc)]}
 
 
-def polymerize_impl(
-    monomers: list[str],
-    functionality: list[int] | None = None,
-    target_density: float = 0.8,
-    forcefield: str = "gaff2",
-    target_conversion: float = 0.95,
-    n_monomers: int | None = None,
-    equilibrate: bool = True,
-    output_dir: str = ".",
-    random_seed: int | None = None,
-) -> dict[str, Any]:
-    """Generate an amorphous porous organic polymer via simulated polymerization.
+def pack_impl(config: dict, output_dir: str = ".", **options) -> dict[str, Any]:
+    """Run direct Packmol packing with the shared JSON box configuration."""
+    return _box_impl(config, output_dir, "pack", options)
 
-    Wraps pysimm (Packmol packing + Polymatic bond formation + LAMMPS MD).
-    Requires the ``pop`` extra plus the Packmol and LAMMPS binaries.
-    """
-    try:
-        from mofforge.polymerize import PopBuilder
 
-        if not monomers:
-            return {"success": False, "error": "At least one monomer is required."}
-        if functionality is not None and len(functionality) != len(monomers):
-            return {
-                "success": False,
-                "error": "functionality must have one entry per monomer.",
-            }
+def polymerize_impl(config: dict, output_dir: str = ".", **options) -> dict[str, Any]:
+    """Run native explicit connection construction; preserve partial-state output."""
+    return _box_impl(config, output_dir, "connect", options)
 
-        builder = PopBuilder()
-        for i, smiles in enumerate(monomers):
-            func = functionality[i] if functionality is not None else None
-            builder.add_monomer(smiles, functionality=func)
-
-        out = resolve_output(os.path.join(output_dir, "placeholder.cif"))
-        out_dir = str(Path(out).parent)
-
-        result = builder.build(
-            output_dir=out_dir,
-            target_density=target_density,
-            forcefield=forcefield,
-            target_conversion=target_conversion,
-            n_monomers=n_monomers,
-            equilibrate=equilibrate,
-            random_seed=random_seed,
-        )
-
-        if result.success:
-            return {
-                "success": True,
-                "backend": result.backend,
-                "elapsed_seconds": result.elapsed_seconds,
-                "output_paths": [str(p) for p in result.output_paths],
-                "atoms": result.crystal.n_atoms if result.crystal else None,
-                "metadata": result.metadata,
-                "validation": result.validation.to_dict() if result.validation else None,
-            }
-        return {
-            "success": False,
-            "backend": result.backend,
-            "errors": result.errors,
-        }
-    except Exception as exc:
-        logger.warning("polymerize failed", exc_info=True)
-        return {"success": False, "error": str(exc)}
 
 
 def render_impl(

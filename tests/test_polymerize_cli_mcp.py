@@ -1,154 +1,137 @@
-"""M2 tests: the polymerize MCP tools and CLI command.
-
-Cover tool registration, capability gating, the ``_impl`` dict shape, and the
-``polymerize`` / ``pop-doctor`` CLI commands.  None require the external
-binaries; the polymerize path is exercised through its graceful missing-binary
-failure so the plumbing (argument passing, JSON shape, exit codes) is verified.
-"""
+"""Shared JSON interface contracts, including partial results and dependency gating."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from mofforge.cli import main
-
-# ---------------------------------------------------------------------------
-# MCP tool registration + capability gating
-# ---------------------------------------------------------------------------
+from mofforge.polymerize import POPResult
 
 
-def test_polymerize_tools_registered():
-    from mofforge.mcp import server
+@pytest.mark.parametrize("capability_present", [False, True])
+def test_pop_capability_checks_rdkit_explicitly(monkeypatch, capability_present):
+    from mofforge.mcp import tool_selection
 
-    names = {r.name for r in server._TOOL_REGISTRY}
-    assert "mofforge_polymerize" in names
-    assert "mofforge_list_reactions" in names
-
-
-def test_polymerize_tools_gated_on_pop_capability():
-    from mofforge.mcp import server
-
-    caps = {r.name: r.capability for r in server._TOOL_REGISTRY}
-    assert caps["mofforge_polymerize"] == "pop"
-    assert caps["mofforge_list_reactions"] == "pop"
-
-
-def test_pop_capability_maps_to_pysimm():
-    from mofforge.mcp.tool_selection import capability_available
-
-    # pysimm is not installed in CI -> capability unavailable (no crash).
-    assert capability_available("pop") is False
-
-
-def test_pop_tools_excluded_when_unavailable():
-    from mofforge.mcp.tool_selection import select_tool_names
-
-    selected = select_tool_names(
-        ["mofforge_polymerize", "mofforge_validate"],
-        {"mofforge_polymerize": "pop", "mofforge_validate": None},
-        available_only=True,
-        availability=lambda cap: cap != "pop",
+    monkeypatch.setattr(
+        tool_selection.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "rdkit" and capability_present else None,
     )
-    assert "mofforge_polymerize" not in selected
-    assert "mofforge_validate" in selected
+    assert tool_selection.capability_available("pop") is capability_present
 
 
-# ---------------------------------------------------------------------------
-# _impl dict shape
-# ---------------------------------------------------------------------------
+def test_tools_registered_with_operation_specific_gates():
+    pytest.importorskip("mcp")
+    from mofforge.mcp import server
+
+    caps = {tool.name: tool.capability for tool in server._TOOL_REGISTRY}
+    assert caps["mofforge_pack"] == "pop"
+    assert caps["mofforge_polymerize"] == "pop"
+    assert caps["mofforge_list_reactions"] is None
 
 
-def test_list_reactions_impl_shape():
+def test_site_catalog_advertises_no_recipes():
     from mofforge.mcp._impl import list_reactions_impl
 
     result = list_reactions_impl()
-    assert result["success"] is True
-    assert any("imine" in r["reaction"] for r in result["reactions"])
-    assert any(s["site_type"] == "amine" for s in result["site_types"])
+    assert result["success"] and result["reactions"] == []
+    assert result["site_types"]
 
 
-def test_polymerize_impl_no_monomers():
-    from mofforge.mcp._impl import polymerize_impl
-
-    result = polymerize_impl([])
-    assert result["success"] is False
-    assert "monomer" in result["error"].lower()
+@pytest.mark.parametrize("command", ["pack", "polymerize"])
+def test_cli_requires_shared_config(command):
+    result = CliRunner().invoke(main, [command])
+    assert result.exit_code != 0 and "--config" in result.output
 
 
-def test_polymerize_impl_functionality_mismatch():
-    from mofforge.mcp._impl import polymerize_impl
-
-    result = polymerize_impl(["NCCN", "C=O"], functionality=[2])
-    assert result["success"] is False
-    assert "functionality" in result["error"].lower()
-
-
-def test_polymerize_impl_missing_binary(tmp_path, monkeypatch):
-    pytest.importorskip("rdkit")
-    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/nonexistent/packmol")
-    from mofforge.mcp._impl import polymerize_impl
-
-    result = polymerize_impl(
-        ["NCCN", "O=Cc1ccc(C=O)cc1"],
-        output_dir=str(tmp_path),
-        random_seed=42,
-    )
-    assert result["success"] is False
-    # Reported as a clean errors list from the backend, not an exception.
-    assert "errors" in result or "error" in result
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-
-def test_cli_polymerize_requires_monomer():
-    runner = CliRunner()
-    result = runner.invoke(main, ["polymerize"])
+@pytest.mark.parametrize(
+    "option,value,hint",
+    [
+        ("--target-density", "0.8", "initial_packing_density"),
+        ("--forcefield", "gaff2", "MatKit"),
+        ("--md-settings", "{}", "MatKit"),
+        ("--n-monomers", "20", "count"),
+    ],
+)
+def test_removed_cli_options_explain_migration(option, value, hint):
+    result = CliRunner().invoke(main, ["polymerize", option, value])
     assert result.exit_code != 0
-    assert "monomer" in result.output.lower()
+    assert hint in result.output
 
 
-def test_cli_polymerize_functionality_mismatch():
-    runner = CliRunner()
-    result = runner.invoke(
-        main, ["polymerize", "-m", "NCCN", "-m", "C=O", "--functionality", "2"]
+@pytest.mark.parametrize("status", ["completed", "partial", "failed"])
+def test_cli_preserves_status_outputs_and_counts(tmp_path, monkeypatch, status):
+    import mofforge.polymerize
+
+    config = {
+        "components": [{"source": "CC", "count": 3}],
+        "packing": {"box_lengths": [10, 10, 10]},
+    }
+    path = tmp_path / "request.json"
+    path.write_text(json.dumps(config))
+    seen = []
+
+    def run(request, **kwargs):
+        seen.append((request, kwargs))
+        return POPResult(
+            status == "completed",
+            status=status,
+            operation="connect",
+            output_paths=[Path("/saved/state.json")],
+            state_path=Path("/saved/state.json"),
+            metadata={"conversion": 0.5},
+            errors=[] if status == "completed" else ["budget"],
+        )
+
+    monkeypatch.setattr(mofforge.polymerize, "run_config", run)
+    result = CliRunner().invoke(main, ["polymerize", "--config", str(path), "--as-json"])
+    assert result.exit_code == (0 if status == "completed" else 1)
+    data = json.loads(result.output)
+    assert data["status"] == status and data["metadata"]["conversion"] == 0.5
+    assert data["state_path"] == "/saved/state.json"
+    assert data["output_paths"] == ["/saved/state.json"]
+    assert seen[0][0] == config and seen[0][1]["operation"] == "connect"
+
+
+def test_mcp_partial_result_has_state_and_conversion(monkeypatch, tmp_path):
+    import mofforge.polymerize
+    from mofforge.mcp._impl import polymerize_impl
+
+    monkeypatch.setattr(
+        mofforge.polymerize,
+        "run_config",
+        lambda *a, **kw: POPResult(
+            False,
+            status="partial",
+            operation="connect",
+            state_path=tmp_path / "state.json",
+            metadata={"conversion": 0.25},
+            errors=["budget"],
+            output_paths=[tmp_path / "state.json"],
+        ),
     )
-    assert result.exit_code == 1
-    assert "once per" in result.output
+    result = polymerize_impl({}, output_dir=str(tmp_path))
+    assert result["status"] == "partial" and not result["success"]
+    assert result["metadata"]["conversion"] == 0.25
+    assert result["state_path"] and result["output_paths"]
 
 
-def test_cli_polymerize_missing_binary(tmp_path, monkeypatch):
-    pytest.importorskip("rdkit")
-    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/nonexistent/packmol")
-    runner = CliRunner()
-    result = runner.invoke(
-        main,
-        [
-            "polymerize",
-            "-m",
-            "NCCN",
-            "-m",
-            "O=Cc1ccc(C=O)cc1",
-            "-o",
-            str(tmp_path),
-            "--random-seed",
-            "42",
-        ],
-    )
-    assert result.exit_code == 1
-    assert "failed" in result.output.lower()
+def test_mcp_rejects_removed_options():
+    from mofforge.mcp._impl import polymerize_impl
+
+    result = polymerize_impl({}, forcefield="gaff2")
+    assert not result["success"] and "MatKit" in result["errors"][0]
 
 
-def test_cli_pop_doctor_json(monkeypatch):
-    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/nonexistent/packmol")
-    monkeypatch.setenv("MOFFORGE_LAMMPS_BIN", "/nonexistent/lmp")
-    runner = CliRunner()
-    result = runner.invoke(main, ["pop-doctor", "--as-json"])
+def test_doctor_without_packmol(monkeypatch):
+    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/missing/packmol")
+    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
+    result = CliRunner().invoke(main, ["pop-doctor", "--as-json"])
     assert result.exit_code == 0
     report = json.loads(result.output)
-    assert set(report) == {"pysimm", "packmol", "lammps"}
+    assert set(report) == {"rdkit", "packmol"}
+    assert not report["packmol"]["available"]

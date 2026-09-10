@@ -19,7 +19,7 @@ def _tool_names(server) -> set[str]:
 
 
 def test_default_stock_server_keeps_full_catalog():
-    assert len(_tool_names(build_server())) == 25
+    assert len(_tool_names(build_server())) == 26
 
 
 def test_stock_server_registers_only_allowlisted_tools():

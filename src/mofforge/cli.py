@@ -506,91 +506,82 @@ def build_list_cmd(backend, list_type, tobacco_data_dir, tobacco_path, verbose):
         click.echo(f"  {item}")
 
 
-@main.command("polymerize")
-@click.option(
-    "-m",
-    "--monomer",
-    "monomers",
-    multiple=True,
-    required=True,
-    help="Monomer SMILES (repeatable).",
-)
-@click.option(
-    "--functionality",
-    "functionalities",
-    multiple=True,
-    type=int,
-    help="Reactive-site count per monomer (repeatable; one per --monomer).",
-)
-@click.option("--target-density", default=0.8, type=float, help="Target density in g/cm^3.")
-@click.option(
-    "--forcefield",
-    type=click.Choice(["gaff2", "dreiding", "pcff"]),
-    default="gaff2",
-    help="pysimm force field.",
-)
-@click.option("--target-conversion", default=0.95, type=float, help="Fraction of sites to consume.")
-@click.option("--n-monomers", default=None, type=int, help="Total monomers to pack.")
-@click.option("--equilibrate/--no-equilibrate", default=True, help="Run MD equilibration.")
-@click.option("-o", "--output", "output_dir", default=".", help="Output directory.")
-@click.option("--random-seed", default=None, type=int, help="Seed for reproducibility.")
-@click.option("-v", "--verbose", is_flag=True, help="Enable verbose output.")
-def polymerize_cmd(
-    monomers,
-    functionalities,
-    target_density,
-    forcefield,
-    target_conversion,
-    n_monomers,
-    equilibrate,
-    output_dir,
-    random_seed,
-    verbose,
-):
-    """Generate an amorphous porous organic polymer from monomer SMILES."""
-    _setup_logging(verbose)
+def _removed_pop_option(ctx, param, value):
+    if value is not None:
+        from mofforge.polymerize.base import reject_removed
 
-    from mofforge.polymerize import PopBuilder
+        try:
+            reject_removed({param.name: value})
+        except TypeError as exc:
+            raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
+    return value
 
-    if functionalities and len(functionalities) != len(monomers):
-        click.echo("Error: --functionality must be given once per --monomer.", err=True)
-        sys.exit(1)
 
-    builder = PopBuilder()
-    for i, smiles in enumerate(monomers):
-        func = functionalities[i] if functionalities else None
-        builder.add_monomer(smiles, functionality=func)
+def _pop_options(function):
+    for option in ("target-density", "forcefield", "md-settings", "n-monomers"):
+        function = click.option(
+            "--" + option, hidden=True, default=None, is_eager=True,
+            expose_value=False, callback=_removed_pop_option,
+        )(function)
+    function = click.option(
+        "--equilibrate/--no-equilibrate", hidden=True, default=None, is_eager=True,
+        expose_value=False, callback=_removed_pop_option,
+    )(function)
+    function = click.option(
+        "--config", "config_path", type=click.Path(exists=True, dir_okay=False), required=True,
+        help="JSON box configuration: explicit component counts and packing/connection options.",
+    )(function)
+    function = click.option("-o", "--output", "output_dir", default=".")(function)
+    function = click.option(
+        "--as-json", is_flag=True, help="Emit complete results, including partial states."
+    )(function)
+    return function
 
-    click.echo(f"Polymerizing {len(monomers)} monomer type(s) (forcefield={forcefield})")
-    result = builder.build(
-        output_dir=output_dir,
-        target_density=target_density,
-        forcefield=forcefield,
-        target_conversion=target_conversion,
-        n_monomers=n_monomers,
-        equilibrate=equilibrate,
-        random_seed=random_seed,
-    )
 
-    if result.success:
-        click.echo(f"Polymerization succeeded in {result.elapsed_seconds}s")
-        for p in result.output_paths:
-            click.echo(f"  Output: {p}")
-        if result.crystal:
-            click.echo(f"  Atoms: {result.crystal.n_atoms}  Bonds: {result.crystal.n_bonds}")
-        if result.metadata.get("box_length"):
-            click.echo(f"  Box length: {result.metadata['box_length']} A")
+def _run_pop_cli(config_path, output_dir, as_json, operation):
+    import json
+
+    from mofforge.polymerize import run_config
+
+    try:
+        config = json.loads(Path(config_path).read_text())
+        result = run_config(config, operation=operation, output_dir=output_dir).to_dict()
+    except (ValueError, TypeError, KeyError, OSError, ImportError) as exc:
+        result = {
+            "success": False, "operation": operation, "status": "failed", "errors": [str(exc)]
+        }
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
     else:
-        click.echo("Polymerization failed:")
-        for err in result.errors:
-            click.echo(f"  {err}")
-        sys.exit(1)
+        click.echo(f"{operation}: {result['status']}")
+        if "conversion" in result.get("metadata", {}):
+            click.echo(f"Conversion: {result['metadata']['conversion']:.3f}")
+        for path in result.get("output_paths", []):
+            click.echo(f"Output: {path}")
+        for error in result.get("errors", []):
+            click.echo(error, err=True)
+    if not result["success"]:
+        raise click.exceptions.Exit(1)
+
+
+@main.command("pack")
+@_pop_options
+def pack_cmd(config_path, output_dir, as_json):
+    """Pack counted molecules using Packmol; export topology and diagnostics."""
+    _run_pop_cli(config_path, output_dir, as_json, "pack")
+
+
+@main.command("polymerize")
+@_pop_options
+def polymerize_cmd(config_path, output_dir, as_json):
+    """Construct explicit connections, optionally packing first. Runs no MD."""
+    _run_pop_cli(config_path, output_dir, as_json, "connect")
 
 
 @main.command("pop-doctor")
 @click.option("--as-json", is_flag=True, help="Emit the report as JSON.")
 def pop_doctor_cmd(as_json):
-    """Report POP dependency and binary availability (pysimm, Packmol, LAMMPS)."""
+    """Report RDKit and Packmol availability, including periodic feature support."""
     import json as _json
 
     from mofforge.polymerize.config import doctor

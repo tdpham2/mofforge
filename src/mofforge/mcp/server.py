@@ -579,80 +579,48 @@ def mofforge_list_building_blocks(
 
 
 @_tool(
-    name="mofforge_polymerize",
+    name="mofforge_pack",
     description=(
-        "Generate an amorphous porous organic polymer (CMP / PIM / HCP) from "
-        "reactive monomers by simulated polymerization.  Monomers are given as "
-        "SMILES; the network is packed (Packmol), bonded (Polymatic), and "
-        "relaxed (LAMMPS) via pysimm, then written as a P1 CIF.  Requires the "
-        "Packmol and LAMMPS binaries."
+        "Pack explicit component counts into a periodic orthorhombic box using Packmol. "
+        "config contains components and packing; choose box_lengths or initial_packing_density. "
+        "Returns native topology, CIF, XYZ and diagnostics. Requires RDKit and Packmol >=20.15.0. "
+        "Creates an initial geometry; simulation runs externally."
     ),
     capability="pop",
 )
-def mofforge_polymerize(
-    monomers: list[str],
-    functionality: list[int] | None = None,
-    target_density: float = 0.8,
-    forcefield: str = "gaff2",
-    target_conversion: float = 0.95,
-    n_monomers: int | None = None,
-    equilibrate: bool = True,
-    output_dir: str = ".",
-    random_seed: int | None = None,
-) -> str:
-    """Generate an amorphous porous organic polymer.
+def mofforge_pack(config: dict, output_dir: str = ".") -> str:
+    """Pack molecules using the shared JSON configuration documented in docs/polymerize.md."""
+    from mofforge.mcp._impl import pack_impl
 
-    Parameters
-    ----------
-    monomers : list[str]
-        Monomer SMILES.  Reactive sites are detected automatically
-        (see mofforge_list_reactions for the curated groups and reactions).
-    functionality : list[int] or None
-        Number of reactive sites per monomer (2 = linear, >=3 = network).
-        One entry per monomer, or None to detect from the SMILES.
-    target_density : float
-        Target mass density in g/cm^3 (sizes the packing box).
-    forcefield : str
-        pysimm force field: "gaff2", "dreiding", or "pcff".
-    target_conversion : float
-        Fraction of reactive sites to consume (0-1).
-    n_monomers : int or None
-        Total monomers to pack; None uses an engine default.
-    equilibrate : bool
-        Run compression/decompression equilibration after bonding.
-    output_dir : str
-        Output directory for the CIF and manifest.
-    random_seed : int or None
-        Seed for reproducible geometry and packing.
-    """
+    return json.dumps(pack_impl(config, output_dir), indent=2)
+
+
+@_tool(
+    name="mofforge_polymerize",
+    description=(
+        "Construct polymer connections using explicit connectors and complete graph-edit rules. "
+        "config contains components, packing and connection, or state_path and connection. "
+        "connection requires rules, target_conversion, candidate_attempt_budget, "
+        "min_nonbonded_distance. "
+        "Returns completed, partial or failed status with resumable state references. No MD is run."
+    ),
+    capability="pop",
+)
+def mofforge_polymerize(config: dict, output_dir: str = ".") -> str:
+    """Pack and connect, or resume a saved native box; simulation is external."""
     from mofforge.mcp._impl import polymerize_impl
 
-    return json.dumps(
-        polymerize_impl(
-            monomers,
-            functionality=functionality,
-            target_density=target_density,
-            forcefield=forcefield,
-            target_conversion=target_conversion,
-            n_monomers=n_monomers,
-            equilibrate=equilibrate,
-            output_dir=output_dir,
-            random_seed=random_seed,
-        ),
-        indent=2,
-    )
+    return json.dumps(polymerize_impl(config, output_dir), indent=2)
 
 
 @_tool(
     name="mofforge_list_reactions",
     description=(
-        "List the curated reactive site types (amine, aldehyde, aryl halide, "
-        "...) and the compatible reactions used by mofforge_polymerize."
+        "List optional SMARTS site annotations. No built-in construction recipes are provided."
     ),
-    capability="pop",
 )
 def mofforge_list_reactions() -> str:
-    """List reactive site types and compatible reactions for polymerization."""
+    """Describe optional site annotations and the requirement for explicit rules."""
     from mofforge.mcp._impl import list_reactions_impl
 
     return json.dumps(list_reactions_impl(), indent=2)
