@@ -1,188 +1,241 @@
-"""Unit tests for the amorphous POP subsystem scaffolding (M0).
-
-These cover the dataclasses, curated reaction/site tables, RDKit reactive-site
-detection, the PopBuilder facade, and external-binary resolution.  No external
-binaries (Packmol / LAMMPS) or pysimm are required; binary resolution is tested
-by pointing the environment at a dummy executable.
-"""
+"""Input contracts and engine-independent native state invariants."""
 
 from __future__ import annotations
 
-import stat
+import subprocess
+import sys
+from dataclasses import replace
 
+import numpy as np
 import pytest
 
-from mofforge.polymerize import Monomer, PopBuilder, PopConfig, POPResult, ReactiveSite, reactions
-from mofforge.polymerize import config as popconfig
-
-# ---------------------------------------------------------------------------
-# Dataclasses
-# ---------------------------------------------------------------------------
+from mofforge.polymerize import Atom, Bond, ConnectionRule, ConstructionState, PopBuilder
+from mofforge.polymerize.geometry import validate_box
+from mofforge.polymerize.state import finite_cycle_too_small
 
 
-def test_monomer_is_smiles():
-    assert Monomer(name="m", source="NCCN").is_smiles
-    assert not Monomer(name="m", source="linker.xyz").is_smiles
-    assert not Monomer(name="m", source="linker.cif").is_smiles
+def two_atoms(*, image=(0, 0, 0), bonded=True):
+    atoms = [Atom("a", "t", "m", "a", "C", 12.011, 0), Atom("b", "t", "m", "b", "C", 12.011, 0)]
+    return ConstructionState(
+        atoms,
+        [[0.1, 1, 1], [1.6, 1, 1]],
+        (10, 10, 10),
+        [Bond("a", "b", 1, image)] if bonded else [],
+    )
 
 
-def test_popconfig_defaults():
-    cfg = PopConfig()
-    assert cfg.target_density == pytest.approx(0.8)
-    assert cfg.forcefield == "gaff2"
-    assert cfg.equilibrate is True
-    assert cfg.box_length is None
+@pytest.mark.parametrize("count", [0, -1, True, 1.5, "2"])
+def test_explicit_positive_counts(count):
+    with pytest.raises(ValueError, match="count"):
+        PopBuilder().add_monomer("C", count=count)
 
 
-def test_popresult_defaults():
-    r = POPResult(success=False)
-    assert r.output_paths == []
-    assert r.errors == []
-    assert r.crystal is None
+def test_count_is_required():
+    with pytest.raises(TypeError, match="count"):
+        PopBuilder().add_monomer("C")
 
 
-def test_reactive_site_fields():
-    site = ReactiveSite(atom_idx=0, anchor_idx=1, site_type="amine")
-    assert site.atom_idx == 0
-    assert site.site_type == "amine"
+def test_removed_options_are_actionable():
+    builder = PopBuilder()
+    for key in ("forcefield", "equilibrate", "md_settings", "target_density", "n_monomers"):
+        with pytest.raises(TypeError, match="Removed POP option"):
+            builder.pack(**{key: 1})
+    with pytest.raises(ValueError, match="native"):
+        PopBuilder(backend="pysimm")
+    with pytest.raises(ValueError, match="rules"):
+        builder.build()
 
 
-# ---------------------------------------------------------------------------
-# Curated reactions / site types
-# ---------------------------------------------------------------------------
+def test_functionality_must_match_connectors():
+    with pytest.raises(ValueError, match="functionality"):
+        PopBuilder().add_monomer("C", count=1, functionality=2)
 
 
-def test_available_site_types():
-    types = {g["site_type"] for g in reactions.available_site_types()}
-    assert {"amine", "aldehyde", "aryl_halide", "vinyl"}.issubset(types)
+def test_rule_requires_complete_deletion_declaration():
+    with pytest.raises(ValueError, match="delete_atoms"):
+        ConnectionRule("r", ("a", "b"), 1, (1.4, 1.6), {"a": []})
+    with pytest.raises(ValueError, match="maximum"):
+        ConnectionRule("r", ("a", "b"), 1, (1.6, 1.4), {"a": [], "b": []})
 
 
-def test_available_reactions():
-    names = {r["reaction"] for r in reactions.available_reactions()}
-    assert any("imine" in n for n in names)
+def test_native_roundtrip_and_topology_hash(tmp_path):
+    state = two_atoms()
+    path = state.save(tmp_path)
+    loaded = ConstructionState.load(path)
+    assert loaded.state_hash == state.state_hash
+    assert loaded.to_dict()["components"] == state.component_records
+    assert loaded.crystal.structure.site_properties["component_id"] == ["a", "a"]
+    with pytest.raises(ValueError, match=r"state\.json"):
+        ConstructionState.load(path.parent / "nonexistent.json")
+    altered = state.copy()
+    altered.bonds[0] = replace(altered.bonds[0], order=2)
+    assert altered.state_hash != state.state_hash
+    assert altered.crystal.periodic_bonds[0].order == 2
+    assert state.crystal.periodic_bonds[0].order == 1
+    (path.parent / "box.xyz").write_text("changed")
+    with pytest.raises(ValueError, match="hash mismatch"):
+        ConstructionState.load(path)
 
 
-def test_compatibility_table():
-    assert reactions.are_compatible("amine", "aldehyde")
-    assert reactions.are_compatible("aldehyde", "amine")  # symmetric
-    assert reactions.are_compatible("aryl_halide", "aryl_halide")  # homo-coupling
-    assert not reactions.are_compatible("amine", "amine")
-    assert reactions.reaction_name("amine", "aldehyde") is not None
-    assert reactions.reaction_name("amine", "vinyl") is None
+def test_missing_and_interrupted_bundle_rejected(tmp_path, monkeypatch):
+    state = two_atoms()
+    path = state.save(tmp_path)
+    (path.parent / "box.cif").unlink()
+    with pytest.raises(OSError):
+        ConstructionState.load(path)
+    from mofforge.core.crystal import Crystal
+
+    monkeypatch.setattr(
+        Crystal, "write_cif", lambda *_: (_ for _ in ()).throw(OSError("interrupted"))
+    )
+    with pytest.raises(OSError, match="interrupted"):
+        state.save(tmp_path / "interrupted")
+    bundle = next((tmp_path / "interrupted").iterdir())
+    assert not (bundle / "manifest.json").exists()
+    with pytest.raises(OSError):
+        ConstructionState.load(bundle)
 
 
-def test_get_group_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown reactive site type"):
-        reactions.get_group("nonsense")
+def test_native_versions_and_statistics_are_checked():
+    data = two_atoms().to_dict()
+    data["schema_version"] = 99
+    with pytest.raises(ValueError, match="schema_version"):
+        ConstructionState.from_dict(data)
+    data = two_atoms().to_dict()
+    data["statistics"]["mass_g_per_mol"] += 1
+    with pytest.raises(ValueError, match="statistics"):
+        ConstructionState.from_dict(data)
+    data = two_atoms().to_dict()
+    data["components"][0]["id"] = "changed"
+    with pytest.raises(ValueError, match="component identities"):
+        ConstructionState.from_dict(data)
 
 
-# ---------------------------------------------------------------------------
-# Reactive-site detection (needs rdkit)
-# ---------------------------------------------------------------------------
+def test_native_load_without_optional_dependencies(tmp_path):
+    path = two_atoms().save(tmp_path)
+    program = """
+import importlib.abc, sys
+class BlockOptional(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'rdkit', 'packmol', 'pysimm', 'mcp'}:
+            raise ModuleNotFoundError(fullname)
+sys.meta_path.insert(0, BlockOptional())
+from mofforge.polymerize import ConstructionState
+s = ConstructionState.load(sys.argv[1])
+print(s.statistics['mass_g_per_mol'])
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", program, str(path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert "24.022" in result.stdout
 
 
-def test_detect_sites_diamine():
-    pytest.importorskip("rdkit")
-    sites = reactions.detect_reactive_sites("NCCN")
-    assert [s.site_type for s in sites] == ["amine", "amine"]
+def test_wrap_preserves_bond_images_orders_and_atom_metadata():
+    state = two_atoms()
+    state.coordinates[1, 0] += 10
+    state.bonds = [replace(state.bonds[0], image=(-1, 0, 0), order=2)]
+    wrapped = state.wrap()
+    assert wrapped.bonds[0].image == (0, 0, 0)
+    crystal = state.crystal
+    for modified in (crystal.copy(), crystal.wrap(), crystal[[1, 0]], crystal + crystal):
+        assert all(b.order == 2 for b in modified.periodic_bonds)
+        assert set(modified.structure.site_properties) >= {
+            "atom_id",
+            "formal_charge",
+            "template_label",
+        }
+    assert np.linalg.norm(wrapped.crystal.bond_vectors(0)[0]) == pytest.approx(1.5)
 
 
-def test_detect_sites_trialdehyde():
-    pytest.importorskip("rdkit")
-    sites = reactions.detect_reactive_sites("O=Cc1cc(C=O)cc(C=O)c1")
-    assert [s.site_type for s in sites] == ["aldehyde", "aldehyde", "aldehyde"]
+def test_periodic_components_distinguish_finite_and_percolating():
+    state = two_atoms(image=(1, 0, 0))
+    assert state.component_info[0][2] == 0  # A boundary-crossing tree is finite.
+    state.bonds.append(Bond("a", "b", 1, (0, 0, 0)))
+    assert state.component_info[0][2] == 1
+    state.bonds.extend([Bond("a", "b", 1, (0, 1, 0)), Bond("a", "b", 1, (0, 0, 1))])
+    assert state.component_info[0][2] == 3
+    state.check()
+    with pytest.raises(ValueError, match="Duplicate periodic"):
+        state.bonds.append(Bond("b", "a", 1, (-1, 0, 0)))
+        state.check()
 
 
-def test_detect_sites_restricted_type():
-    pytest.importorskip("rdkit")
-    # Only look for aldehydes on a molecule that also has an amine.
-    sites = reactions.detect_reactive_sites("NCc1ccc(C=O)cc1", site_types=["aldehyde"])
-    assert [s.site_type for s in sites] == ["aldehyde"]
+def test_minimum_cycle_size_uses_atom_images():
+    state = two_atoms()
+    assert finite_cycle_too_small(state.atoms, state.bonds, "a", "b", (0, 0, 0), 3)
+    assert not finite_cycle_too_small(state.atoms, state.bonds, "a", "b", (1, 0, 0), 3)
 
 
-def test_detect_sites_bad_smiles():
-    pytest.importorskip("rdkit")
-    with pytest.raises(ValueError, match="could not parse SMILES"):
-        reactions.detect_reactive_sites("not-a-smiles((")
+def test_construction_rejects_warning_only_contacts():
+    state = two_atoms(bonded=False)
+    report, _ = validate_box(state, separation=2.0)
+    assert not report.is_valid
+    assert report.close_contacts
 
 
-# ---------------------------------------------------------------------------
-# PopBuilder facade
-# ---------------------------------------------------------------------------
+def test_own_periodic_images_and_packing_tolerance():
+    state = ConstructionState(
+        [Atom("a", "t", "m", "a", "He", 4.0026)], [[0, 0, 0]], (1.98, 10, 10), []
+    )
+    assert not validate_box(state, separation=2.0, packing=True)[0].is_valid
+    state.box_lengths = (1.995, 10, 10)
+    assert validate_box(state, separation=2.0, packing=True)[0].is_valid
 
 
-def test_builder_unknown_backend():
-    with pytest.raises(ValueError, match="Unknown backend"):
-        PopBuilder(backend="nope")
+def test_geometry_mapping_and_cell_updates():
+    state = two_atoms()
+    state.metadata.update(
+        initial_packing_density=0.3, validation={"old": True}, derived_results={"x": 1}
+    )
+    records = [
+        {"id": a.id, "species": a.species, "coordinates": pos.tolist()}
+        for a, pos in zip(state.atoms, state.coordinates, strict=True)
+    ]
+    updated = state.update_geometry(
+        parent_hash=state.state_hash,
+        atoms=list(reversed(records)),
+        box_lengths=[20, 10, 10],
+        unwrapped=True,
+    )
+    assert updated.statistics["current_density"] == pytest.approx(
+        state.statistics["current_density"] / 2
+    )
+    assert updated.metadata["initial_packing_density"] == 0.3
+    assert "validation" not in updated.metadata and "derived_results" not in updated.metadata
+    assert updated.metadata["geometry_requires_validation"]
+    assert updated.bonds == state.bonds
+    for malformed in (records[:1], [records[0], records[0]]):
+        with pytest.raises(ValueError, match="every atom"):
+            state.update_geometry(parent_hash=state.state_hash, atoms=malformed, unwrapped=True)
+    with pytest.raises(ValueError, match="parent_hash"):
+        state.update_geometry(parent_hash="wrong", atoms=records, unwrapped=True)
+    with pytest.raises(ValueError, match="wrapping offsets"):
+        state.update_geometry(parent_hash=state.state_hash, atoms=records)
+    records[0]["species"] = "N"
+    with pytest.raises(ValueError, match="species"):
+        state.update_geometry(parent_hash=state.state_hash, atoms=records, unwrapped=True)
 
 
-def test_builder_add_and_list_monomers():
-    b = PopBuilder()
-    b.add_monomer("NCCN", name="diamine")
-    b.add_monomer("O=Cc1ccc(C=O)cc1", name="dial")
-    assert b.list_monomers() == ["diamine", "dial"]
+def test_explicit_wrapping_offsets_preserve_physical_bonds():
+    state = two_atoms()
+    coords = state.coordinates + np.array([9, 0, 0])
+    records = [
+        {
+            "id": atom.id,
+            "species": atom.species,
+            "coordinates": (pos % state.box_lengths).tolist(),
+            "wrapping_offset": np.floor(pos / state.box_lengths).astype(int).tolist(),
+        }
+        for atom, pos in zip(state.atoms, coords, strict=True)
+    ]
+    updated = state.update_geometry(parent_hash=state.state_hash, atoms=records)
+    assert updated.bonds[0].image == (1, 0, 0)
+    assert np.linalg.norm(updated.crystal.bond_vectors(0)[0]) == pytest.approx(1.5)
 
 
-def test_builder_build_without_monomers_fails():
-    result = PopBuilder().build()
-    assert result.success is False
-    assert "No monomers" in result.errors[0]
+def test_site_annotations_do_not_claim_reaction_recipes():
+    from mofforge.polymerize.reactions import available_reactions, available_site_types
 
-
-def test_builder_rejects_unknown_option():
-    b = PopBuilder()
-    b.add_monomer("NCCN")
-    with pytest.raises(TypeError, match="Unknown build option"):
-        b.build(bogus_option=1)
-
-
-def test_builder_make_config_passes_known_fields():
-    cfg = PopBuilder._make_config({"target_density": 1.1, "forcefield": "pcff"})
-    assert cfg.target_density == pytest.approx(1.1)
-    assert cfg.forcefield == "pcff"
-
-
-# ---------------------------------------------------------------------------
-# External-binary resolution
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def fake_binary(tmp_path):
-    """Create an executable dummy file and return its path."""
-    exe = tmp_path / "packmol"
-    exe.write_text("#!/bin/sh\n")
-    exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
-    return exe
-
-
-def test_resolve_packmol_via_env(fake_binary, monkeypatch):
-    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", str(fake_binary))
-    cfg = popconfig.PopBuildConfig.load()
-    assert cfg.resolve_packmol_binary() == fake_binary.resolve()
-
-
-def test_resolve_packmol_via_kwarg(fake_binary):
-    cfg = popconfig.PopBuildConfig.load(packmol_bin=str(fake_binary))
-    assert cfg.resolve_packmol_binary() == fake_binary.resolve()
-
-
-def test_resolve_missing_binary_raises(monkeypatch):
-    # Ensure nothing is discoverable: clear env and blank PATH.
-    monkeypatch.delenv("MOFFORGE_PACKMOL_BIN", raising=False)
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
-    monkeypatch.setenv("PATH", "")
-    cfg = popconfig.PopBuildConfig.load()
-    with pytest.raises(popconfig.ConfigError, match="Packmol executable not found"):
-        cfg.resolve_packmol_binary()
-    with pytest.raises(popconfig.ConfigError, match="LAMMPS executable not found"):
-        cfg.resolve_lammps_binary()
-
-
-def test_doctor_reports_all_tools(monkeypatch):
-    monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv("MOFFORGE_PACKMOL_BIN", raising=False)
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
-    report = popconfig.doctor()
-    assert set(report) == {"pysimm", "packmol", "lammps"}
-    assert report["packmol"]["available"] is False
+    assert available_reactions() == []
+    assert any(s["site_type"] == "amine" for s in available_site_types())

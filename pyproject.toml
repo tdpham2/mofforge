@@ -55,17 +55,11 @@ mcp = [
     "mcp[cli]>=1.16,<2",
 ]
 pop = [
-    # Amorphous porous-organic-polymer generation via simulated polymerization.
-    # pysimm drives the Polymatic bond-formation loop, Packmol packing, and the
-    # LAMMPS MD relaxation; rdkit turns monomer SMILES into 3-D geometry with
-    # tagged reactive sites.  The Packmol and LAMMPS *binaries* are not Python
-    # packages: mofforge resolves them at runtime from an explicit config value
-    # (mofforge.toml / MOFFORGE_PACKMOL_BIN / MOFFORGE_LAMMPS_BIN) or a PATH
-    # search (see mofforge.polymerize.config), and raises only when a step needs
-    # a missing one.
-    "pysimm",
+    # Explicit molecular preparation and local valence checks. Install the
+    # Packmol executable separately; simulation/MLIP dependencies belong to MatKit.
     "rdkit",
 ]
+
 chemgraph = [
     # ChemGraph CGFastMCP HPC adapter (mofforge-mcp-chemgraph entry point).
     # The CGFastMCP class lives on the dev-globus-hpc branch; install from

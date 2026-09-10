@@ -1,14 +1,4 @@
-"""Reactive-site detection and compatibility for simulated polymerization.
-
-A monomer carries *reactive sites* — functional groups that form the new
-inter-monomer covalent bonds.  This module curates the SMARTS that identify them
-(mirroring the ``[cH]`` approach in :mod:`mofforge.functionalize.sites`) and a
-symmetric table of which site *types* react with which.
-
-The chemist authors the SMARTS and the compatibility table here; the agent only
-picks reaction names.  This keeps invented / unphysical chemistry out of the
-build, exactly as the curated functional-group menu does for functionalization.
-"""
+"""Optional SMARTS site annotations; no reaction recipes or compatibility inference."""
 
 from __future__ import annotations
 
@@ -50,27 +40,10 @@ _GROUPS: tuple[ReactiveGroup, ...] = (
 
 _GROUPS_BY_TYPE: dict[str, ReactiveGroup] = {g.site_type: g for g in _GROUPS}
 
-# Symmetric compatibility: an unordered pair of site types that bond together.
-# Named reactions map monomer chemistries to the covalent linkage they form.
-_COMPATIBLE_PAIRS: dict[frozenset[str], str] = {
-    frozenset({"amine", "aldehyde"}): "imine (Schiff base) condensation",
-    frozenset({"aryl_halide"}): "aryl-aryl coupling (C-C)",
-    frozenset({"boronic_acid"}): "boroxine condensation",
-    frozenset({"boronic_acid", "hydroxyl"}): "boronate ester condensation",
-    frozenset({"vinyl"}): "vinyl addition (C-C)",
-}
-
 
 def available_reactions() -> list[dict[str, str]]:
-    """Return the curated reactions as JSON-friendly dicts (for MCP/CLI menus)."""
-    reactions = []
-    for pair, name in _COMPATIBLE_PAIRS.items():
-        types = sorted(pair)
-        # A homo-coupling pair (e.g. aryl_halide + aryl_halide) has one element.
-        a = types[0]
-        b = types[1] if len(types) > 1 else types[0]
-        reactions.append({"reaction": name, "site_type_a": a, "site_type_b": b})
-    return sorted(reactions, key=lambda r: r["reaction"])
+    """No built-in construction recipes; supply explicit ConnectionRule edits."""
+    return []
 
 
 def available_site_types() -> list[dict[str, str]]:
@@ -90,16 +63,6 @@ def get_group(site_type: str) -> ReactiveGroup:
             f"Unknown reactive site type {site_type!r}. "
             f"Choose from: {', '.join(sorted(_GROUPS_BY_TYPE))}"
         ) from None
-
-
-def are_compatible(type_a: str, type_b: str) -> bool:
-    """Return whether two site types form a curated covalent linkage."""
-    return frozenset({type_a, type_b}) in _COMPATIBLE_PAIRS
-
-
-def reaction_name(type_a: str, type_b: str) -> str | None:
-    """Return the reaction name for a compatible pair, or ``None``."""
-    return _COMPATIBLE_PAIRS.get(frozenset({type_a, type_b}))
 
 
 @dataclass

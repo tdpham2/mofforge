@@ -1,183 +1,225 @@
-"""Unit tests for M1: monomer prep, box sizing, and System->Crystal conversion.
-
-These require rdkit but NOT pysimm / Packmol / LAMMPS: the pysimm ``System`` is
-replaced with a lightweight fake so the conversion logic is testable in CI.  The
-real end-to-end run is covered by ``test_polymerize_integration.py``.
-"""
+"""Molecular input preparation and Packmol failure handling."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mofforge.polymerize import Monomer, PopBuilder
-from mofforge.polymerize.convert import system_to_crystal
-from mofforge.polymerize.engine import PysimmBackend
-from mofforge.polymerize.monomer import box_length_for_density, prepare_monomer
-
-# ---------------------------------------------------------------------------
-# Monomer preparation (needs rdkit)
-# ---------------------------------------------------------------------------
+from mofforge.polymerize import PopBuilder, engine
+from mofforge.polymerize.config import ConfigError, PopBuildConfig, doctor, probe_packmol
 
 
-def test_prepare_smiles_monomer_detects_sites(tmp_path):
+@pytest.fixture
+def builder():
     pytest.importorskip("rdkit")
-    prep = prepare_monomer(Monomer(name="diamine", source="NCCN"), tmp_path, random_seed=42)
-    assert [s.site_type for s in prep.sites] == ["amine", "amine"]
-    assert prep.mol_path.is_file()
-    assert prep.n_atoms == 12  # NCCN + 8 H
-    assert prep.molar_mass == pytest.approx(60.1, abs=0.2)
-
-
-def test_prepare_monomer_no_sites_raises(tmp_path):
-    pytest.importorskip("rdkit")
-    # Methane has no curated reactive group.
-    with pytest.raises(ValueError, match="No reactive sites"):
-        prepare_monomer(Monomer(name="methane", source="C"), tmp_path)
-
-
-def test_prepare_monomer_explicit_sites(tmp_path):
-    pytest.importorskip("rdkit")
-    from mofforge.polymerize import ReactiveSite
-
-    mono = Monomer(name="x", source="c1ccccc1", sites=[ReactiveSite(atom_idx=0, site_type="vinyl")])
-    prep = prepare_monomer(mono, tmp_path, random_seed=1)
-    assert [s.site_type for s in prep.sites] == ["vinyl"]
-
-
-def test_prepare_from_xyz_with_anchor_tags(tmp_path):
-    pytest.importorskip("rdkit")
-    xyz = tmp_path / "frag.xyz"
-    xyz.write_text(
-        "3\ntest\nC!   0.0 0.0 0.0\nC    1.5 0.0 0.0\nC!   3.0 0.0 0.0\n"
-    )
-    prep = prepare_monomer(Monomer(name="frag", source=str(xyz)), tmp_path)
-    assert [s.atom_idx for s in prep.sites] == [0, 2]
-    # The re-emitted XYZ must have the '!' tags stripped.
-    assert "!" not in prep.mol_path.read_text()
-
-
-# ---------------------------------------------------------------------------
-# Box sizing
-# ---------------------------------------------------------------------------
-
-
-def test_box_length_scales_with_density(tmp_path):
-    pytest.importorskip("rdkit")
-    prep = prepare_monomer(Monomer(name="diamine", source="NCCN"), tmp_path, random_seed=42)
-    low = box_length_for_density([prep], [10], 0.5)
-    high = box_length_for_density([prep], [10], 1.5)
-    # Higher density -> smaller box.
-    assert high < low
-
-
-def test_box_length_bad_density(tmp_path):
-    pytest.importorskip("rdkit")
-    prep = prepare_monomer(Monomer(name="diamine", source="NCCN"), tmp_path, random_seed=42)
-    with pytest.raises(ValueError, match="target_density must be positive"):
-        box_length_for_density([prep], [10], 0.0)
-
-
-def test_monomer_counts_split():
-    assert PysimmBackend._monomer_counts(2, 20) == [10, 10]
-    assert PysimmBackend._monomer_counts(3, 50) == [17, 17, 16]
-    assert PysimmBackend._monomer_counts(1, None) == [20]
-
-
-# ---------------------------------------------------------------------------
-# System -> Crystal conversion (fake pysimm System)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _FakeType:
-    elem: str
-
-
-@dataclass
-class _FakeParticle:
-    tag: int
-    x: float
-    y: float
-    z: float
-    elem: str
-
-    @property
-    def type(self):
-        return _FakeType(self.elem)
-
-    def get_chem_element(self):
-        return self.elem
-
-
-@dataclass
-class _FakeBond:
-    a: _FakeParticle
-    b: _FakeParticle
-
-
-class _FakeDim:
-    xlo, xhi = 0.0, 10.0
-    ylo, yhi = 0.0, 12.0
-    zlo, zhi = 0.0, 14.0
-    dx, dy, dz = 10.0, 12.0, 14.0
-
-
-class _FakeSystem:
-    def __init__(self, particles, bonds):
-        self.particles = particles
-        self.bonds = bonds
-        self.dim = _FakeDim()
-
-
-def test_system_to_crystal_roundtrips_atoms_and_bonds():
-    p1 = _FakeParticle(1, 1.0, 1.0, 1.0, "C")
-    p2 = _FakeParticle(2, 2.5, 1.0, 1.0, "N")
-    p3 = _FakeParticle(3, 4.0, 1.0, 1.0, "C")
-    system = _FakeSystem([p1, p2, p3], [_FakeBond(p1, p2), _FakeBond(p2, p3)])
-
-    crystal = system_to_crystal(system, name="pop_test")
-
-    assert crystal.n_atoms == 3
-    assert crystal.species == ["C", "N", "C"]
-    assert crystal.n_bonds == 2
-    # Orthorhombic box from the fake dim.
-    lengths = crystal.lattice.abc
-    assert lengths == pytest.approx((10.0, 12.0, 14.0))
-    assert np.allclose(crystal.cart_coords[1], [2.5, 1.0, 1.0])
-
-
-def test_system_to_crystal_empty_raises():
-    with pytest.raises(ValueError, match="no particles"):
-        system_to_crystal(_FakeSystem([], []))
-
-
-def test_system_to_crystal_bad_box_raises():
-    class _BadDim(_FakeDim):
-        dx = 0.0
-
-    sys = _FakeSystem([_FakeParticle(1, 0, 0, 0, "C")], [])
-    sys.dim = _BadDim()
-    with pytest.raises(ValueError, match="non-positive box dimension"):
-        system_to_crystal(sys)
-
-
-# ---------------------------------------------------------------------------
-# Backend graceful failure without binaries
-# ---------------------------------------------------------------------------
-
-
-def test_build_without_binaries_reports_error(tmp_path, monkeypatch):
-    pytest.importorskip("rdkit")
-    monkeypatch.setenv("PATH", "")
-    monkeypatch.delenv("MOFFORGE_PACKMOL_BIN", raising=False)
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
     b = PopBuilder()
-    b.add_monomer("NCCN", name="diamine")
-    b.add_monomer("O=Cc1ccc(C=O)cc1", name="dial")
-    result = b.build(output_dir=str(tmp_path), random_seed=42)
-    assert result.success is False
-    assert result.backend == "pysimm"
-    assert any("not found" in e for e in result.errors)
+    b.add_monomer("CC", count=2)
+    return b
+
+
+def test_smiles_preparation_counts_mass_labels_and_seed(builder):
+    a, b = builder.prepare(random_seed=42)[0], builder.prepare(random_seed=42)[0]
+    assert a.n_atoms == 8 and a.molar_mass == pytest.approx(30.07)
+    assert np.array_equal(a.coordinates, b.coordinates)
+    assert "h:a0:1" in [atom.label for atom in a.atoms]
+    assert a.provenance["embedding_seed"] == b.provenance["embedding_seed"]
+
+
+def test_cleanup_must_converge(builder, monkeypatch):
+    from rdkit.Chem import AllChem
+
+    monkeypatch.setattr(AllChem, "UFFOptimizeMolecule", lambda *args, **kwargs: 1)
+    with pytest.raises(ValueError, match="did not converge"):
+        builder.prepare(random_seed=42)
+
+
+def test_coordinate_input_preserves_geometry_and_hydrogen_count(tmp_path):
+    Chem = pytest.importorskip("rdkit.Chem")
+    from rdkit.Chem import AllChem
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("CC"))
+    AllChem.EmbedMolecule(mol, randomSeed=42)
+    path = tmp_path / "ethane.mol"
+    Chem.MolToMolFile(mol, str(path))
+    original = path.read_bytes()
+    b = PopBuilder()
+    b.add_monomer(path, count=2, name="../unsafe")
+    prepared = b.prepare()[0]
+    assert prepared.n_atoms == 8
+    assert np.allclose(prepared.coordinates, mol.GetConformer().GetPositions(), atol=0.0001)
+    assert path.read_bytes() == original
+    Chem.MolToMolFile(Chem.RemoveHs(mol), str(path))
+    with pytest.raises(ValueError, match="explicit hydrogen"):
+        b.prepare()
+
+
+def test_xyz_needs_explicit_graph_and_preserves_source(tmp_path):
+    pytest.importorskip("rdkit")
+    path = tmp_path / "hydrogen.xyz"
+    original = "2\nsource\nH 0 0 0\nH 0.74 0 0\n"
+    path.write_text(original)
+    b = PopBuilder()
+    b.add_monomer(path, count=1)
+    with pytest.raises(ValueError, match="graph"):
+        b.prepare()
+    b = PopBuilder()
+    b.add_monomer(
+        path,
+        count=1,
+        graph={
+            "atoms": [{"label": "h0", "species": "H"}, {"label": "h1", "species": "H"}],
+            "bonds": [{"atom1": "h0", "atom2": "h1", "order": 1}],
+        },
+    )
+    assert b.prepare()[0].n_atoms == 2
+    assert path.read_text() == original
+
+
+def test_crystal_oligomer_input_unwraps_finite_topology(builder):
+    from mofforge.polymerize.provision import instantiate
+
+    template = builder.prepare(random_seed=42)
+    state = instantiate(builder._monomers, template, (10, 10, 10), one_copy=True).wrap()
+    b = PopBuilder()
+    b.add_monomer(state.crystal, count=3)
+    prepared = b.prepare()[0]
+    assert prepared.n_atoms == 8
+    assert prepared.molar_mass == pytest.approx(template[0].molar_mass)
+    assert np.allclose(
+        np.sort(prepared.coordinates[:, 0] - prepared.coordinates[0, 0]),
+        np.sort(template[0].coordinates[:, 0] - template[0].coordinates[0, 0]),
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"box_lengths": [10, 10, 10], "initial_packing_density": 0.3},
+        {"box_lengths": [10, -1, 10]},
+        {"initial_packing_density": float("nan")},
+        {"box_lengths": [10, 10, 10], "random_seed": True},
+    ],
+)
+def test_bad_packing_options_fail_before_execution(builder, monkeypatch, tmp_path, options):
+    monkeypatch.setattr(engine, "probe_packmol", lambda *_: pytest.fail("engine must not run"))
+    with pytest.raises(ValueError):
+        builder.pack(output_dir=tmp_path, **options)
+
+
+def mock_engine(monkeypatch, runner):
+    monkeypatch.setattr(PopBuildConfig, "resolve_packmol_binary", lambda _: Path("/fake/packmol"))
+    monkeypatch.setattr(engine, "probe_packmol", lambda *_: ("21.2.3", "Version 21.2.3"))
+    monkeypatch.setattr(engine.subprocess, "run", runner)
+
+
+def test_timeout_preserves_logs_and_input(builder, monkeypatch, tmp_path):
+    def timeout(*args, **kwargs):
+        assert kwargs["stdin"].seekable()
+        raise subprocess.TimeoutExpired(
+            args[0], 0.1, output=b"partial stdout", stderr=b"partial stderr"
+        )
+
+    mock_engine(monkeypatch, timeout)
+    result = builder.pack(output_dir=tmp_path, box_lengths=[10, 10, 10], timeout=0.1)
+    assert not result.success and result.status == "failed"
+    run = result.output_paths[0]
+    assert (run / "stdout.log").read_text() == "partial stdout"
+    assert (run / "stderr.log").read_text() == "partial stderr"
+    assert (run / "packmol.inp").is_file()
+    assert (run / "result.json").is_file()
+    assert "timed out" in result.errors[0]
+    assert result.metadata["random_seed"] is not None
+    assert result.metadata["requested_counts"] == [2]
+
+
+def test_malformed_zero_exit_rejected(builder, monkeypatch, tmp_path):
+    def malformed(*args, **kwargs):
+        (kwargs["cwd"] / "packed.xyz").write_text("1\nwrong\nHe 0 0 0\n")
+        return subprocess.CompletedProcess(args[0], 0, "pretend success", "")
+
+    mock_engine(monkeypatch, malformed)
+    result = builder.pack(output_dir=tmp_path, box_lengths=[10, 10, 10])
+    assert not result.success
+    assert "atom count" in result.errors[0]
+    assert not list(tmp_path.rglob("manifest.json"))
+
+
+def test_configured_invalid_binary_does_not_fall_back(monkeypatch):
+    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/missing/packmol")
+    with pytest.raises(ConfigError, match="Configured Packmol"):
+        PopBuildConfig().resolve_packmol_binary()
+
+
+def test_omitted_builder_override_preserves_toml_configuration(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
+    (tmp_path / "mofforge.toml").write_text('[backends.pop]\npackmol_bin = "/configured/packmol"\n')
+    assert PopBuildConfig.load(packmol_bin=None).packmol_bin == "/configured/packmol"
+    assert PopBuildConfig.load(packmol_bin="/explicit/packmol").packmol_bin == "/explicit/packmol"
+
+
+def test_version_feature_gate(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "Version 20.14.0", ""),
+    )
+    with pytest.raises(ConfigError, match=r"20\.15\.0"):
+        probe_packmol("/fake")
+
+
+def test_doctor_reports_rdkit_and_packmol(monkeypatch):
+    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/missing/packmol")
+    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
+    report = doctor()
+    assert set(report) == {"rdkit", "packmol"}
+    assert not report["packmol"]["available"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"target_conversion": 1.2},
+        {"target_conversion": "0.5"},
+        {"candidate_attempt_budget": 0},
+        {"min_nonbonded_distance": -1},
+        {"allow_cycles": "false"},
+        {"allow_cycles": True},
+    ],
+)
+def test_bad_connection_settings_fail_before_packing(builder, monkeypatch, bad):
+    from mofforge.polymerize import ConnectionRule
+
+    monkeypatch.setattr(engine, "pack", lambda *a, **kw: pytest.fail("must not pack"))
+    options = dict(target_conversion=1, candidate_attempt_budget=1, min_nonbonded_distance=1.5)
+    options.update(bad)
+    with pytest.raises(ValueError):
+        builder.build(
+            rules=[ConnectionRule("r", ("a", "b"), 1, (1.4, 1.6), {"a": [], "b": []})],
+            box_lengths=[20, 20, 20],
+            **options,
+        )
+
+
+def test_crystal_preserves_explicit_bond_orders_and_isotope_masses():
+    pytest.importorskip("rdkit")
+    from dataclasses import replace
+
+    from mofforge.polymerize.provision import instantiate
+
+    builder = PopBuilder()
+    builder.add_monomer("[2H]c1ccccc1", count=1)
+    original = instantiate(builder._monomers, builder.prepare(random_seed=42), (20, 20, 20))
+    # Explicit Kekule orders must survive RDKit's aromaticity perception.
+    aromatic = [i for i, b in enumerate(original.bonds) if b.order == 1.5]
+    for n, i in enumerate(aromatic):
+        original.bonds[i] = replace(original.bonds[i], order=1 if n % 2 else 2)
+    builder = PopBuilder()
+    builder.add_monomer(original.crystal, count=1)
+    prepared = builder.prepare()[0]
+    assert prepared.molar_mass == pytest.approx(original.statistics["mass_g_per_mol"])
+    assert [b.order for b in prepared.bonds] == [b.order for b in original.bonds]
