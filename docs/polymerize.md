@@ -153,7 +153,17 @@ percolating components cannot be moved as finite molecules. The rule's
 `angle_tolerance` defaults to 30 degrees. Trials validate retained atoms after
 edits, including local valence, bond lengths, severe overlaps, and the explicit
 construction nonbonded separation. Bonded pairs and pairs separated by two bonds
-are exempt from that nonbonded cutoff in their specific periodic images.
+are exempt from that nonbonded cutoff in their specific periodic images. Pairs
+three or more bonds apart within one molecule are not exempt: benzene's adjacent
+hydrogens are 2.48 Å apart, so `min_nonbonded_distance` above that cannot succeed.
+Violations that no trial can remove (untouched by deletions or new bonds, and
+rigid under component moves) are reported before any attempt; `build()` checks
+template-internal contacts before running Packmol.
+
+Candidates are ordered by endpoint distance. Pairs that cannot move (same-component
+closures and joins between percolating components) are screened against
+`bond_length` and `angle_tolerance` without spending an attempt. A pair rejected
+while both of its components are unchanged is retried after untried pairs.
 
 Each event consumes two original connectors. Conversion is cumulative consumed
 connectors divided by the initial connector count, including after reloads.
@@ -166,6 +176,14 @@ Same-component closures require `allow_cycles=True` and `minimum_cycle_size`
 on every rule. Endpoints must already satisfy geometry limits. Finite-ring size
 is evaluated with atom images; periodic winding is not a finite ring. Reported
 periodic connectivity ranks range from zero (finite) to three.
+
+Because only finite components move, and rigidly, one construction pass grows
+branched trees. Rings, crosslinks, and joins between percolating components form
+only when their endpoints are already within the rule's limits. A crosslinked,
+percolating network therefore usually needs the external loop: relax the saved
+state, import it with `update_geometry`, and resume `connect` with
+`allow_cycles=True`. For example, 16 tetraphenylmethane units with an aryl-aryl
+rule stop near 0.47 conversion as one finite, ring-free tree on the first pass.
 
 ## Saved boxes and external geometry
 
@@ -222,8 +240,10 @@ mofforge polymerize --config construction.json --output connected --as-json
 
 For construction, add `connectors` to component definitions and a `connection`
 object containing `rules`, `target_conversion`, `candidate_attempt_budget`, and
-`min_nonbonded_distance`. For resumption, provide `state_path` and `connection`,
-omitting `components` and `packing`. Relative paths are resolved from the calling
+`min_nonbonded_distance` (optionally `allow_cycles`). When packing first, the
+connection reuses `packing.random_seed`. For resumption, provide `state_path` and
+`connection` (which may then set `random_seed`), omitting `components` and
+`packing`. Relative paths are resolved from the calling
 working directory. See the [executable example](../examples/polymerize/README.md).
 
 MCP provides `mofforge_pack(config, output_dir)` and

@@ -1141,7 +1141,7 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
         capabilities.append("linker functionalization")
     if enabled & {"mofforge_place_adsorbate", "mofforge_list_adsorbates"}:
         capabilities.append("adsorbate placement")
-    if enabled & {"mofforge_polymerize", "mofforge_list_reactions"}:
+    if enabled & {"mofforge_pack", "mofforge_polymerize", "mofforge_list_reactions"}:
         capabilities.append("amorphous polymer (POP) generation")
     if "mofforge_validate" in enabled:
         capabilities.append("structure validation")
@@ -1172,10 +1172,12 @@ def _server_instructions(enabled_names: Collection[str]) -> str:
             "- Typical functionalization workflow: mofforge_find_sites, "
             "mofforge_list_functional_groups, then mofforge_functionalize."
         )
-    if {"mofforge_list_reactions", "mofforge_polymerize"} <= enabled:
+    if "mofforge_polymerize" in enabled:
         guidance.append(
-            "- Typical polymer workflow: mofforge_list_reactions, then "
-            "mofforge_polymerize with monomer SMILES."
+            "- Typical polymer workflow: mofforge_pack or mofforge_polymerize with explicit "
+            "component counts, connectors and connection rules (no built-in reaction recipes; "
+            "mofforge_list_reactions only lists SMARTS annotations). Resume partial results "
+            "with state_path after external relaxation."
         )
     if "mofforge_validate" in enabled:
         guidance.append("- Call mofforge_validate after modifications.")

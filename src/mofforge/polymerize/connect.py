@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 
 from mofforge.polymerize.base import ConnectionRule, POPResult, integer, positive
 from mofforge.polymerize.engine import persist_result
-from mofforge.polymerize.geometry import validate_box
+from mofforge.polymerize.geometry import inspect_box, validate_box
 from mofforge.polymerize.monomer import check_valence
 from mofforge.polymerize.state import Bond, adjacency, finite_cycle_too_small
 from mofforge.provenance import derive_seed, effective_seed
@@ -86,8 +86,49 @@ def check_rules(state, rules):
                         raise ValueError("Cannot change formal charge on a deleted atom.")
 
 
-def _outward(state, site):
-    graph = adjacency(state.atoms, state.bonds)
+def persistent_violations(state, rules, separation):
+    """Geometry violations that no connection trial can remove.
+
+    Trials delete only declared atoms, exempt new 1-2/1-3 pairs (each involving
+    a connector atom), and move finite components rigidly. A violation persists
+    when it avoids those atoms and is rigid: within one finite component's own
+    image, within one percolating component, or between percolating components.
+    """
+    mutable = set()
+    for site in state.connectors:
+        if site.consumed:
+            continue
+        mutable.add(site.atom)
+        for rule in rules:
+            for side, role in zip(("a", "b"), rule.roles, strict=True):
+                if role == site.role:
+                    mutable |= _deleted(state, site, rule.delete_atoms[side])
+    owner = {atom: comp for comp in state.component_info for atom in comp[0]}
+    result = []
+    for i, j, image, message in inspect_box(state, separation=separation)[2]:
+        if {i, j} & mutable:
+            continue
+        first, second = owner[i], owner[j]
+        if first is second:
+            internal = tuple(int(x) for x in first[1][j] - first[1][i]) == tuple(image)
+            if first[2] or internal:
+                result.append(message)
+        elif first[2] and second[2]:
+            result.append(message)
+    return result
+
+
+def persistent_message(violations, separation):
+    return (
+        f"{len(violations)} geometry violations cannot be removed by any connection at "
+        f"min_nonbonded_distance={separation} angstrom. Only bonded and 1-3 pairs are exempt, "
+        "including within a molecule; lower the distance or fix the geometry. "
+        + "; ".join(violations[:3])
+    )
+
+
+def _outward(state, site, graph=None):
+    graph = adjacency(state.atoms, state.bonds) if graph is None else graph
     images = [image for neighbor, image in graph[site.atom] if neighbor == site.anchor]
     if len(images) != 1:
         raise ValueError("Orientation anchor must be a uniquely bonded neighbor.")
@@ -116,10 +157,23 @@ def _align(source, target):
     return Rotation.from_rotvec(np.arctan2(sine, cosine) * axis / sine).as_matrix()
 
 
-def _trial(state, a, b, rule, image, component_a, component_b, torsion, separation):
-    trial = state.copy()
+def _placement_error(state, a, b, rule, vector, graph=None):
+    """Return why endpoints at this separation vector cannot bond, or None."""
+    distance = np.linalg.norm(vector)
+    if not rule.bond_length[0] - 1e-8 <= distance <= rule.bond_length[1] + 1e-8:
+        return "Attachment distance outside the rule's bond_length interval."
+    for site, target in ((a, vector), (b, -vector)):
+        direction = _outward(state, site, graph)
+        angle = np.degrees(np.arccos(np.clip(np.dot(direction, target / distance), -1, 1)))
+        if angle > rule.angle_tolerance + 1e-6:
+            return "Attachment orientation outside the rule's angle_tolerance."
+    return None
+
+
+def _trial(state, a, b, rule, image, component_a, component_b, torsion, separation, graph=None):
+    trial = state.copy(history=False)
     idx = trial.index
-    direction_a, direction_b = _outward(state, a), _outward(state, b)
+    direction_a, direction_b = _outward(state, a, graph), _outward(state, b, graph)
     same = component_a is component_b
     moving = None
     if not same:
@@ -160,13 +214,10 @@ def _trial(state, a, b, rule, image, component_a, component_b, torsion, separati
         + np.array(image) * trial.box_lengths
         - trial.coordinates[idx[a.atom]]
     )
-    distance = np.linalg.norm(vector)
-    if not rule.bond_length[0] - 1e-8 <= distance <= rule.bond_length[1] + 1e-8:
-        raise ValueError("Attachment distance outside the rule's bond_length interval.")
-    for direction, target in ((_outward(trial, a), vector), (_outward(trial, b), -vector)):
-        angle = np.degrees(np.arccos(np.clip(np.dot(direction, target / distance), -1, 1)))
-        if angle > rule.angle_tolerance + 1e-6:
-            raise ValueError("Attachment orientation outside the rule's angle_tolerance.")
+    # Moving a component resets its bond images, so only a fixed trial reuses the graph.
+    error = _placement_error(trial, a, b, rule, vector, graph if moving is None else None)
+    if error:
+        raise ValueError(error)
     new_bond = Bond(a.atom, b.atom, rule.bond_order, tuple(image), rule.bond_length)
     if new_bond.key in {bond.key for bond in trial.bonds}:
         raise ValueError("Duplicate periodic bond.")
@@ -262,12 +313,24 @@ def connect(
     check_valence(current.atoms, current.bonds)
     attempts = 0
     reason = "No compatible candidates remain."
-    while current.conversion + 1e-12 < target_conversion and attempts < candidate_attempt_budget:
+    persistent = persistent_violations(current, rules, separation)
+    if persistent:
+        reason = persistent_message(persistent, separation)
+    # Pairs rejected while both components were unchanged are retried last.
+    rejected = {}
+    while (
+        not persistent
+        and current.conversion + 1e-12 < target_conversion
+        and attempts < candidate_attempt_budget
+    ):
         idx = current.index
         comps = current.component_info
         owner = {atom: comp for comp in comps for atom in comp[0]}
+        identity = {id(comp): (min(comp[0]), len(comp[0])) for comp in comps}
+        graph = adjacency(current.atoms, current.bonds)
         active = sorted((s for s in current.connectors if not s.consumed), key=lambda s: s.id)
         candidates = []
+        excluded = 0
         for n, first in enumerate(active):
             for second in active[n + 1 :]:
                 same = owner[first.atom] is owner[second.atom]
@@ -282,10 +345,22 @@ def connect(
                         continue
                     delta = current.coordinates[idx[b.atom]] - current.coordinates[idx[a.atom]]
                     image = -np.rint(delta / current.box_lengths).astype(int)
-                    distance = np.linalg.norm(delta + image * current.box_lengths)
+                    vector = delta + image * current.box_lengths
+                    # Endpoints that cannot move must already fit; screening them
+                    # here keeps impossible closures from spending the budget.
+                    if same or (owner[a.atom][2] and owner[b.atom][2]):
+                        try:
+                            misplaced = _placement_error(current, a, b, rule, vector, graph)
+                        except ValueError:
+                            misplaced = True
+                        if misplaced:
+                            excluded += 1
+                            continue
+                    signature = (identity[id(owner[a.atom])], identity[id(owner[b.atom])])
                     candidates.append(
                         (
-                            float(distance),
+                            rejected.get((a.id, b.id, rule.name)) == signature,
+                            float(np.linalg.norm(vector)),
                             a.id,
                             b.id,
                             rule.name,
@@ -293,14 +368,16 @@ def connect(
                             b,
                             rule,
                             tuple(int(x) for x in image),
+                            signature,
                         )
                     )
         committed = False
-        for _, _, _, _, a, b, rule, image in sorted(candidates, key=lambda item: item[:4]):
+        tried = 0
+        for *_, a, b, rule, image, signature in sorted(candidates, key=lambda item: item[:5]):
             if attempts >= candidate_attempt_budget:
-                reason = "Candidate-attempt budget reached."
                 break
             attempts += 1
+            tried += 1
             rng = np.random.default_rng(
                 derive_seed(seed, [len(current.events), a.id, b.id, rule.name])
             )
@@ -320,6 +397,7 @@ def connect(
                         owner[b.atom],
                         torsion,
                         separation,
+                        graph,
                     )
                 except ValueError as exc:
                     rejections.append(str(exc))
@@ -329,15 +407,24 @@ def connect(
                 break
             if committed:
                 break
+            rejected[(a.id, b.id, rule.name)] = signature
             current.events.append(
                 {
                     "committed": False,
                     "rule": rule.name,
                     "sites": [a.id, b.id],
-                    "reasons": rejections,
+                    "trials": len(torsions),
+                    "reasons": list(dict.fromkeys(rejections)),
                 }
             )
         if not committed:
+            if tried:
+                reason = f"All {tried} remaining candidates were rejected; see uncommitted events."
+            elif excluded:
+                reason = (
+                    f"No movable candidates remain; {excluded} pairs that cannot move lie "
+                    "outside bond_length or angle_tolerance."
+                )
             break
     complete = current.conversion + 1e-12 >= target_conversion
     if not complete and attempts >= candidate_attempt_budget:

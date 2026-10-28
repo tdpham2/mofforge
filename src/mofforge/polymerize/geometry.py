@@ -11,10 +11,17 @@ from mofforge.validation import ValidationReport
 
 
 def validate_box(state, *, separation: float, packing: bool = False):
+    report, checks, _ = inspect_box(state, separation=separation, packing=packing)
+    return report, checks
+
+
+def inspect_box(state, *, separation: float, packing: bool = False):
+    """validate_box plus (atom_id, atom_id, image, message) for each violation."""
     positive(separation, "separation")
     state.check()
     report = ValidationReport(checks_performed=["geometry", "overlaps", "periodic_separation"])
     index = state.index
+    violations = []
     for bond in state.bonds:
         distance = np.linalg.norm(
             state.coordinates[index[bond.j]]
@@ -25,9 +32,9 @@ def validate_box(state, *, separation: float, packing: bool = False):
             bond.length_range
             and not bond.length_range[0] - 1e-8 <= distance <= bond.length_range[1] + 1e-8
         ):
-            report.errors.append(
-                f"Bond {bond.i}--{bond.j} length {distance:.6f} outside {bond.length_range}."
-            )
+            message = f"Bond {bond.i}--{bond.j} length {distance:.6f} outside {bond.length_range}."
+            report.errors.append(message)
+            violations.append((bond.i, bond.j, bond.image, message))
     graph = adjacency(state.atoms, state.bonds)
     exempt = {}
     offsets = {}
@@ -62,7 +69,9 @@ def validate_box(state, *, separation: float, packing: bool = False):
         a, b = state.atoms[i], state.atoms[j]
         if distance < 0.6 * (radii[a.species] + radii[b.species]):
             report.steric_clashes.append((i, j, float(distance)))
-            report.errors.append(f"Severe overlap: {a.id}--{b.id} image {image}.")
+            message = f"Severe overlap: {a.id}--{b.id} image {image}."
+            report.errors.append(message)
+            violations.append((a.id, b.id, image, message))
             continue
         if packing:
             internal = a.instance_id == b.instance_id and image == tuple(
@@ -75,13 +84,19 @@ def validate_box(state, *, separation: float, packing: bool = False):
         minimum = float(distance) if minimum is None else min(minimum, float(distance))
         if distance < separation - tolerance:
             report.close_contacts.append((i, j, float(distance)))
-            report.errors.append(
+            message = (
                 f"Nonbonded separation {a.id}--{b.id} image {image}: "
                 f"{distance:.6f} < {separation} angstrom."
             )
-    return report, {
-        "requested_separation": separation,
-        "tolerance_angstrom": tolerance,
-        "minimum_contact_within_cutoff": minimum,
-        "separation_passed": report.is_valid,
-    }
+            report.errors.append(message)
+            violations.append((a.id, b.id, image, message))
+    return (
+        report,
+        {
+            "requested_separation": separation,
+            "tolerance_angstrom": tolerance,
+            "minimum_contact_within_cutoff": minimum,
+            "separation_passed": report.is_valid,
+        },
+        violations,
+    )

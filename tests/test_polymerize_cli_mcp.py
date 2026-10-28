@@ -135,3 +135,29 @@ def test_doctor_without_packmol(monkeypatch):
     report = json.loads(result.output)
     assert set(report) == {"rdkit", "packmol"}
     assert not report["packmol"]["available"]
+
+
+@pytest.mark.parametrize(
+    "config,match",
+    [
+        ({"connection": {"output_dir": "x"}}, "Unknown connection options"),
+        ({"components": [], "packing": {"rules": []}, "connection": {}}, "out of packing"),
+        (
+            {"components": [], "packing": {}, "connection": {"random_seed": 1}},
+            "random_seed under packing",
+        ),
+    ],
+)
+def test_run_config_keeps_packing_and_connection_options_apart(config, match):
+    from mofforge.polymerize import run_config
+
+    with pytest.raises(ValueError, match=match):
+        run_config(config, operation="connect")
+
+
+def test_server_guidance_requires_explicit_polymer_rules():
+    pytest.importorskip("mcp")
+    from mofforge.mcp import server
+
+    text = server._server_instructions({"mofforge_pack", "mofforge_polymerize"})
+    assert "connection rules" in text and "monomer SMILES" not in text

@@ -281,11 +281,24 @@ class ConstructionState:
         )
         return Crystal("polymer_box", structure, bonds=graph, periodic_bonds=records)
 
-    def copy(self):
-        return copy.deepcopy(self)
+    def copy(self, *, history=True):
+        """Deep copy; history=False shares the append-only event/provenance records.
+
+        Connection trials copy the state many times. Their event logs only grow,
+        so copying the record lists (not each record) keeps trials independent.
+        """
+        if history:
+            return copy.deepcopy(self)
+        result = copy.copy(self)
+        result.coordinates = self.coordinates.copy()
+        result.atoms, result.bonds = list(self.atoms), list(self.bonds)
+        result.connectors = [replace(s, replaceable=list(s.replaceable)) for s in self.connectors]
+        result.metadata = copy.deepcopy(self.metadata)
+        result.events, result.provenance = list(self.events), list(self.provenance)
+        return result
 
     def wrap(self):
-        result = self.copy()
+        result = self.copy(history=False)
         shifts = np.floor(result.coordinates / result.box_lengths).astype(int)
         result.coordinates -= shifts * result.box_lengths
         idx = result.index

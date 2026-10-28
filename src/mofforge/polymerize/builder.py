@@ -9,6 +9,15 @@ from mofforge.polymerize.base import Connector, Monomer, reject_removed
 from mofforge.polymerize.provision import instantiate
 from mofforge.provenance import derive_seed, effective_seed
 
+CONNECTION_KEYS = {
+    "rules",
+    "target_conversion",
+    "candidate_attempt_budget",
+    "min_nonbonded_distance",
+    "allow_cycles",
+    "random_seed",
+}
+
 
 class PopBuilder:
     def __init__(self, backend="native", *, packmol_bin=None, **options):
@@ -110,6 +119,8 @@ class PopBuilder:
             check_options,
             check_rules,
             connect,
+            persistent_message,
+            persistent_violations,
             rules_from_input,
         )
         from mofforge.polymerize.engine import pack
@@ -130,6 +141,10 @@ class PopBuilder:
         # Resolve chemistry edits against one copy of each template before invoking Packmol.
         preview = instantiate(self._monomers, prepared, (100.0, 100.0, 100.0), one_copy=True)
         check_rules(preview, rules)
+        # Template-internal contacts survive every trial; reject them before packing.
+        persistent = persistent_violations(preview, rules, min_nonbonded_distance)
+        if persistent:
+            raise ValueError(persistent_message(persistent, min_nonbonded_distance))
         packed = pack(
             self._monomers,
             prepared,
@@ -171,21 +186,29 @@ def run_config(config: dict, *, operation="pack", output_dir="."):
         raise ValueError(f"Unknown box configuration keys: {sorted(unknown)}")
     if operation not in ("pack", "connect"):
         raise ValueError("operation must be pack or connect.")
+    connection = config.get("connection", {})
+    unknown = set(connection) - CONNECTION_KEYS
+    if unknown:
+        raise ValueError(f"Unknown connection options: {sorted(unknown)}")
     if "state_path" in config:
         if operation != "connect" or set(config) & {"components", "packing", "packmol_bin"}:
             raise ValueError("state_path is for connection-only requests without packing inputs.")
         return connect(
-            ConstructionState.load(config["state_path"]),
-            output_dir=output_dir,
-            **config.get("connection", {}),
+            ConstructionState.load(config["state_path"]), output_dir=output_dir, **connection
         )
     if operation == "pack" and "connection" in config:
         raise ValueError("Packing requests cannot include connection options; use polymerize.")
+    misplaced = set(config.get("packing", {})) & (CONNECTION_KEYS - {"random_seed"})
+    if misplaced:
+        raise ValueError(f"Move connection options out of packing: {sorted(misplaced)}")
+    if "random_seed" in connection:
+        # build() connects with the packing seed; a second seed here would be ignored.
+        raise ValueError(
+            "Set random_seed under packing; connection.random_seed applies only to state_path."
+        )
     builder = PopBuilder(packmol_bin=config.get("packmol_bin"))
     for component in config.get("components", []):
         builder.add_monomer(**component)
     if operation == "pack":
         return builder.pack(output_dir=output_dir, **config.get("packing", {}))
-    return builder.build(
-        output_dir=output_dir, **config.get("packing", {}), **config.get("connection", {})
-    )
+    return builder.build(output_dir=output_dir, **config.get("packing", {}), **connection)

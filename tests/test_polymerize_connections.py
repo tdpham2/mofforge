@@ -267,3 +267,92 @@ def test_failed_bundle_write_retains_valid_connection_result(aryl_rule, monkeypa
     assert result.state_path is None
     assert result.output_paths
     assert not list(tmp_path.rglob("manifest.json"))
+
+
+def test_unreachable_closures_do_not_spend_the_budget(aryl_rule):
+    # Each benzene's own connectors are nearer than its neighbors' but cannot close.
+    result = connect(
+        prepared_chain(),
+        [aryl_rule],
+        target_conversion=2 / 3,
+        candidate_attempt_budget=2,
+        min_nonbonded_distance=1.5,
+        random_seed=42,
+        allow_cycles=True,
+    )
+    assert result.success, result.errors
+    assert result.metadata["candidate_attempts"] == 2
+    assert all(e["committed"] for e in result.state.events)
+
+
+def test_persistent_intramolecular_contacts_fail_before_any_attempt(aryl_rule, monkeypatch):
+    # Benzene's adjacent hydrogens (2.48 A) are 1-4 pairs no connection can exempt.
+    result = connect(
+        prepared_chain(2),
+        [aryl_rule],
+        target_conversion=0.5,
+        candidate_attempt_budget=5,
+        min_nonbonded_distance=2.6,
+    )
+    assert result.status == "failed" and result.metadata["candidate_attempts"] == 0
+    assert "cannot be removed by any connection" in result.errors[0]
+    assert not result.state.events
+
+    from mofforge.polymerize import engine
+
+    monkeypatch.setattr(engine, "pack", lambda *_, **__: pytest.fail("Packmol was invoked"))
+    builder = PopBuilder()
+    builder.add_monomer("c1ccccc1", count=2, connectors=aryl_connectors())
+    with pytest.raises(ValueError, match="cannot be removed by any connection"):
+        builder.build(
+            rules=[aryl_rule],
+            target_conversion=0.5,
+            candidate_attempt_budget=5,
+            min_nonbonded_distance=2.6,
+            box_lengths=[30, 30, 30],
+        )
+
+
+def test_leaving_atom_contacts_do_not_block_construction(aryl_rule):
+    state = prepared_chain(2)
+    idx = state.index
+    # Put the two leaving hydrogens closer than the separation; deletion removes them.
+    first, second = state.connectors[1].anchor, state.connectors[2].anchor
+    state.coordinates[idx[second]] = state.coordinates[idx[first]] + [1.2, 0, 0]
+    result = connect(
+        state,
+        [aryl_rule],
+        target_conversion=0.5,
+        candidate_attempt_budget=5,
+        min_nonbonded_distance=1.5,
+    )
+    assert result.metadata["candidate_attempts"] >= 1
+    assert "cannot be removed" not in " ".join(result.errors)
+
+
+def test_exhausted_candidates_report_rejections(aryl_rule):
+    bad = replace(aryl_rule, delete_atoms={"a": [], "b": []})
+    result = connect(
+        prepared_chain(2),
+        [bad],
+        target_conversion=0.5,
+        candidate_attempt_budget=10,
+        min_nonbonded_distance=1.5,
+    )
+    assert result.metadata["candidate_attempts"] == 4
+    assert result.errors[0].startswith("All 4 remaining candidates were rejected")
+    for event in result.state.events:
+        assert len(event["reasons"]) == len(set(event["reasons"])) <= event["trials"]
+
+
+def test_trial_copies_share_history_without_aliasing_state():
+    state = prepared_chain(2)
+    state.events.append({"committed": False})
+    before = state.state_hash
+    shared = state.copy(history=False)
+    shared.events.append({"committed": True})
+    shared.connectors[0].consumed = True
+    shared.connectors[0].replaceable.append("x")
+    shared.coordinates += 1.0
+    shared.metadata["changed"] = True
+    assert state.state_hash == before and len(state.events) == 1
