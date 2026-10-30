@@ -27,7 +27,7 @@ a seekable stdin file because some builds rewind it.
 RDKit is needed for molecular preparation and connection valence checks.
 Native box loading and inspection require neither RDKit nor external engines.
 Mofforge does not run LAMMPS or load MLIP checkpoints. Those settings belong to
-MatKit. The previous pysimm backend has been removed.
+MatKit.
 
 ## Inputs, labels, and density
 
@@ -252,9 +252,3 @@ Packmol is required only when packing executes. `mofforge_list_reactions` lists
 annotation patterns and reports an empty recipe list. CLI exits zero only on
 completion. Partial and failed results retain status, diagnostics, and saved
 state references where available across all interfaces.
-
-Migration: `target_density` is replaced by `initial_packing_density`, scalar
-`box_length` by `box_lengths`, and `n_monomers` by explicit component counts.
-`forcefield`, `equilibrate`, `md_settings`, `lammps_bin`, and
-`MOFFORGE_LAMMPS_BIN` are removed and produce migration errors when explicitly
-used. Configure simulations in MatKit.

@@ -11,8 +11,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from mofforge.polymerize.base import reject_removed
-
 
 class ConfigError(ValueError):
     """Invalid POP configuration or unavailable Packmol executable."""
@@ -42,10 +40,6 @@ class PopBuildConfig:
     def load(cls, **overrides):
         path = _find_toml()
         config = _load_toml(path).get("backends", {}).get("pop", {}) if path else {}
-        reject_removed(config)
-        reject_removed(overrides)
-        if os.environ.get("MOFFORGE_LAMMPS_BIN"):
-            raise ConfigError("MOFFORGE_LAMMPS_BIN was removed; configure LAMMPS in MatKit.")
         unknown = (set(config) | set(overrides)) - {"packmol_bin"}
         if unknown:
             raise ConfigError(f"Unknown POP backend settings: {sorted(unknown)}")

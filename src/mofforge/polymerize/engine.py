@@ -12,7 +12,7 @@ import numpy as np
 from scipy.spatial.distance import pdist
 
 from mofforge.io.xyz import read_xyz, write_xyz
-from mofforge.polymerize.base import POPResult, positive, reject_removed
+from mofforge.polymerize.base import POPResult, positive
 from mofforge.polymerize.base import box_lengths as validate_lengths
 from mofforge.polymerize.config import PopBuildConfig, probe_packmol
 from mofforge.polymerize.geometry import validate_box
@@ -55,7 +55,6 @@ def pack(
     experimental_density=None,
     **options,
 ):
-    reject_removed(options)
     if options:
         raise TypeError(f"Unknown packing options: {sorted(options)}")
     if not monomers:

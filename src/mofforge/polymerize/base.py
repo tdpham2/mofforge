@@ -35,22 +35,6 @@ def box_lengths(value) -> tuple[float, float, float]:
     return tuple(positive(v, "box length") for v in value)
 
 
-def reject_removed(options: dict) -> None:
-    replacements = {
-        "target_density": "Use initial_packing_density (no universal default).",
-        "box_length": "Use box_lengths=[Lx, Ly, Lz].",
-        "n_monomers": "Supply count for each component.",
-        "sites": "Supply explicit connectors; SMARTS detection is annotation only.",
-        "forcefield": "Configure force fields and simulations in MatKit.",
-        "equilibrate": "Run equilibration externally in MatKit.",
-        "md_settings": "Configure MD externally in MatKit.",
-        "lammps_bin": "Configure LAMMPS externally in MatKit.",
-    }
-    for name, message in replacements.items():
-        if name in options:
-            raise TypeError(f"Removed POP option {name!r}. {message}")
-
-
 @dataclass(frozen=True)
 class Connector:
     """Template site; atom -> anchor is its outgoing direction.

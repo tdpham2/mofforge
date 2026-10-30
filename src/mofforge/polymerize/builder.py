@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mofforge.core.crystal import Crystal
-from mofforge.polymerize.base import Connector, Monomer, reject_removed
+from mofforge.polymerize.base import Connector, Monomer
 from mofforge.polymerize.provision import instantiate
 from mofforge.provenance import derive_seed, effective_seed
 
@@ -20,10 +20,7 @@ CONNECTION_KEYS = {
 
 
 class PopBuilder:
-    def __init__(self, backend="native", *, packmol_bin=None, **options):
-        reject_removed(options)
-        if options:
-            raise TypeError(f"Unknown builder options: {sorted(options)}")
+    def __init__(self, backend="native", *, packmol_bin=None):
         if backend != "native":
             raise ValueError(f"Unknown backend {backend!r}; use native (direct Packmol).")
         self.packmol_bin = packmol_bin
@@ -43,11 +40,7 @@ class PopBuilder:
         connectors=None,
         functionality=None,
         graph=None,
-        **options,
     ):
-        reject_removed(options)
-        if options:
-            raise TypeError(f"Unknown component options: {sorted(options)}")
         monomer = Monomer(
             name or f"component{len(self._monomers) + 1}",
             source,
@@ -93,7 +86,6 @@ class PopBuilder:
     def pack(self, output_dir=".", **options):
         from mofforge.polymerize.engine import pack
 
-        reject_removed(options)
         prepared = self.prepare(random_seed=options.pop("random_seed", None))
         return pack(
             self._monomers,
@@ -125,7 +117,6 @@ class PopBuilder:
         )
         from mofforge.polymerize.engine import pack
 
-        reject_removed(packing_options)
         rules = rules_from_input(rules)
         if any(
             v is None for v in (target_conversion, candidate_attempt_budget, min_nonbonded_distance)
@@ -180,7 +171,6 @@ def run_config(config: dict, *, operation="pack", output_dir="."):
 
     if not isinstance(config, dict):
         raise ValueError("Box configuration must be a JSON object.")
-    reject_removed(config)
     unknown = set(config) - {"components", "packing", "connection", "packmol_bin", "state_path"}
     if unknown:
         raise ValueError(f"Unknown box configuration keys: {sorted(unknown)}")

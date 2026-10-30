@@ -670,28 +670,24 @@ def list_reactions_impl() -> dict[str, Any]:
             "note": "SMARTS annotations only; construction requires explicit connection rules."}
 
 
-def _box_impl(config, output_dir, operation, options):
+def _box_impl(config, output_dir, operation):
     try:
         from mofforge.polymerize import run_config
-        from mofforge.polymerize.base import reject_removed
 
-        reject_removed(options)
-        if options:
-            raise ValueError(f"Unknown box options: {sorted(options)}")
         out = resolve_output(os.path.join(output_dir, "box-output"))
         return run_config(config, operation=operation, output_dir=str(Path(out).parent)).to_dict()
     except (ValueError, TypeError, KeyError, OSError, ImportError) as exc:
         return {"success": False, "operation": operation, "status": "failed", "errors": [str(exc)]}
 
 
-def pack_impl(config: dict, output_dir: str = ".", **options) -> dict[str, Any]:
+def pack_impl(config: dict, output_dir: str = ".") -> dict[str, Any]:
     """Run direct Packmol packing with the shared JSON box configuration."""
-    return _box_impl(config, output_dir, "pack", options)
+    return _box_impl(config, output_dir, "pack")
 
 
-def polymerize_impl(config: dict, output_dir: str = ".", **options) -> dict[str, Any]:
+def polymerize_impl(config: dict, output_dir: str = ".") -> dict[str, Any]:
     """Run native explicit connection construction; preserve partial-state output."""
-    return _box_impl(config, output_dir, "connect", options)
+    return _box_impl(config, output_dir, "connect")
 
 
 

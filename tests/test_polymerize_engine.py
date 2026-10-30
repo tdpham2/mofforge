@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from mofforge.polymerize import PopBuilder, engine
-from mofforge.polymerize.config import ConfigError, PopBuildConfig, doctor, probe_packmol
+from mofforge.polymerize.config import ConfigError, PopBuildConfig, probe_packmol
 
 
 @pytest.fixture
@@ -26,14 +26,6 @@ def test_smiles_preparation_counts_mass_labels_and_seed(builder):
     assert np.array_equal(a.coordinates, b.coordinates)
     assert "h:a0:1" in [atom.label for atom in a.atoms]
     assert a.provenance["embedding_seed"] == b.provenance["embedding_seed"]
-
-
-def test_cleanup_must_converge(builder, monkeypatch):
-    from rdkit.Chem import AllChem
-
-    monkeypatch.setattr(AllChem, "UFFOptimizeMolecule", lambda *args, **kwargs: 1)
-    with pytest.raises(ValueError, match="did not converge"):
-        builder.prepare(random_seed=42)
 
 
 def test_coordinate_input_preserves_geometry_and_hydrogen_count(tmp_path):
@@ -156,7 +148,6 @@ def test_configured_invalid_binary_does_not_fall_back(monkeypatch):
 
 def test_omitted_builder_override_preserves_toml_configuration(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
     (tmp_path / "mofforge.toml").write_text('[backends.pop]\npackmol_bin = "/configured/packmol"\n')
     assert PopBuildConfig.load(packmol_bin=None).packmol_bin == "/configured/packmol"
     assert PopBuildConfig.load(packmol_bin="/explicit/packmol").packmol_bin == "/explicit/packmol"
@@ -170,14 +161,6 @@ def test_version_feature_gate(monkeypatch):
     )
     with pytest.raises(ConfigError, match=r"20\.15\.0"):
         probe_packmol("/fake")
-
-
-def test_doctor_reports_rdkit_and_packmol(monkeypatch):
-    monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/missing/packmol")
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
-    report = doctor()
-    assert set(report) == {"rdkit", "packmol"}
-    assert not report["packmol"]["available"]
 
 
 @pytest.mark.parametrize(

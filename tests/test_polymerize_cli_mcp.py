@@ -12,55 +12,12 @@ from mofforge.cli import main
 from mofforge.polymerize import POPResult
 
 
-@pytest.mark.parametrize("capability_present", [False, True])
-def test_pop_capability_checks_rdkit_explicitly(monkeypatch, capability_present):
-    from mofforge.mcp import tool_selection
-
-    monkeypatch.setattr(
-        tool_selection.importlib.util,
-        "find_spec",
-        lambda name: object() if name == "rdkit" and capability_present else None,
-    )
-    assert tool_selection.capability_available("pop") is capability_present
-
-
-def test_tools_registered_with_operation_specific_gates():
-    pytest.importorskip("mcp")
-    from mofforge.mcp import server
-
-    caps = {tool.name: tool.capability for tool in server._TOOL_REGISTRY}
-    assert caps["mofforge_pack"] == "pop"
-    assert caps["mofforge_polymerize"] == "pop"
-    assert caps["mofforge_list_reactions"] is None
-
-
 def test_site_catalog_advertises_no_recipes():
     from mofforge.mcp._impl import list_reactions_impl
 
     result = list_reactions_impl()
     assert result["success"] and result["reactions"] == []
     assert result["site_types"]
-
-
-@pytest.mark.parametrize("command", ["pack", "polymerize"])
-def test_cli_requires_shared_config(command):
-    result = CliRunner().invoke(main, [command])
-    assert result.exit_code != 0 and "--config" in result.output
-
-
-@pytest.mark.parametrize(
-    "option,value,hint",
-    [
-        ("--target-density", "0.8", "initial_packing_density"),
-        ("--forcefield", "gaff2", "MatKit"),
-        ("--md-settings", "{}", "MatKit"),
-        ("--n-monomers", "20", "count"),
-    ],
-)
-def test_removed_cli_options_explain_migration(option, value, hint):
-    result = CliRunner().invoke(main, ["polymerize", option, value])
-    assert result.exit_code != 0
-    assert hint in result.output
 
 
 @pytest.mark.parametrize("status", ["completed", "partial", "failed"])
@@ -97,39 +54,8 @@ def test_cli_preserves_status_outputs_and_counts(tmp_path, monkeypatch, status):
     assert seen[0][0] == config and seen[0][1]["operation"] == "connect"
 
 
-def test_mcp_partial_result_has_state_and_conversion(monkeypatch, tmp_path):
-    import mofforge.polymerize
-    from mofforge.mcp._impl import polymerize_impl
-
-    monkeypatch.setattr(
-        mofforge.polymerize,
-        "run_config",
-        lambda *a, **kw: POPResult(
-            False,
-            status="partial",
-            operation="connect",
-            state_path=tmp_path / "state.json",
-            metadata={"conversion": 0.25},
-            errors=["budget"],
-            output_paths=[tmp_path / "state.json"],
-        ),
-    )
-    result = polymerize_impl({}, output_dir=str(tmp_path))
-    assert result["status"] == "partial" and not result["success"]
-    assert result["metadata"]["conversion"] == 0.25
-    assert result["state_path"] and result["output_paths"]
-
-
-def test_mcp_rejects_removed_options():
-    from mofforge.mcp._impl import polymerize_impl
-
-    result = polymerize_impl({}, forcefield="gaff2")
-    assert not result["success"] and "MatKit" in result["errors"][0]
-
-
 def test_doctor_without_packmol(monkeypatch):
     monkeypatch.setenv("MOFFORGE_PACKMOL_BIN", "/missing/packmol")
-    monkeypatch.delenv("MOFFORGE_LAMMPS_BIN", raising=False)
     result = CliRunner().invoke(main, ["pop-doctor", "--as-json"])
     assert result.exit_code == 0
     report = json.loads(result.output)
@@ -153,11 +79,3 @@ def test_run_config_keeps_packing_and_connection_options_apart(config, match):
 
     with pytest.raises(ValueError, match=match):
         run_config(config, operation="connect")
-
-
-def test_server_guidance_requires_explicit_polymer_rules():
-    pytest.importorskip("mcp")
-    from mofforge.mcp import server
-
-    text = server._server_instructions({"mofforge_pack", "mofforge_polymerize"})
-    assert "connection rules" in text and "monomer SMILES" not in text

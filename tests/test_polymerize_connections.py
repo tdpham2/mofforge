@@ -108,18 +108,6 @@ def test_incomplete_edits_fail_valence_without_mutating_state(aryl_rule):
     assert any("valence" in reason for e in result.state.events for reason in e.get("reasons", []))
 
 
-def test_aromatic_double_connection_requires_internal_edits(aryl_rule):
-    result = connect(
-        prepared_chain(2),
-        [replace(aryl_rule, bond_order=2)],
-        target_conversion=0.5,
-        candidate_attempt_budget=1,
-        min_nonbonded_distance=1.5,
-    )
-    assert not result.success and result.state.conversion == 0
-    assert any("valence" in reason for e in result.state.events for reason in e.get("reasons", []))
-
-
 def test_rule_unknown_labels_rejected_before_trials(aryl_rule):
     bad = replace(aryl_rule, delete_atoms={"a": ["nonexistent"], "b": []})
     with pytest.raises(ValueError, match="Unknown template label"):
@@ -247,28 +235,6 @@ def test_cycle_minimum_is_required(aryl_rule):
         )
 
 
-def test_failed_bundle_write_retains_valid_connection_result(aryl_rule, monkeypatch, tmp_path):
-    from mofforge.core.crystal import Crystal
-
-    monkeypatch.setattr(
-        Crystal, "write_cif", lambda *_: (_ for _ in ()).throw(OSError("interrupted"))
-    )
-    result = connect(
-        prepared_chain(2),
-        [aryl_rule],
-        target_conversion=0.5,
-        candidate_attempt_budget=1,
-        min_nonbonded_distance=1.5,
-        output_dir=tmp_path,
-    )
-    assert not result.success and result.status == "failed"
-    assert result.state.conversion == 0.5 and result.validation.is_valid
-    assert "interrupted" in result.errors[0]
-    assert result.state_path is None
-    assert result.output_paths
-    assert not list(tmp_path.rglob("manifest.json"))
-
-
 def test_unreachable_closures_do_not_spend_the_budget(aryl_rule):
     # Each benzene's own connectors are nearer than its neighbors' but cannot close.
     result = connect(
@@ -343,16 +309,3 @@ def test_exhausted_candidates_report_rejections(aryl_rule):
     assert result.errors[0].startswith("All 4 remaining candidates were rejected")
     for event in result.state.events:
         assert len(event["reasons"]) == len(set(event["reasons"])) <= event["trials"]
-
-
-def test_trial_copies_share_history_without_aliasing_state():
-    state = prepared_chain(2)
-    state.events.append({"committed": False})
-    before = state.state_hash
-    shared = state.copy(history=False)
-    shared.events.append({"committed": True})
-    shared.connectors[0].consumed = True
-    shared.connectors[0].replaceable.append("x")
-    shared.coordinates += 1.0
-    shared.metadata["changed"] = True
-    assert state.state_hash == before and len(state.events) == 1

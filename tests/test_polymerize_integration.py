@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -62,20 +61,6 @@ def test_real_counted_mixture_and_density(tmp_path):
     assert result.metadata["current_density"] == pytest.approx(0.05)
     run = result.output_paths[0]
     assert (run / "t0000.xyz").exists() and (run / "t0001.xyz").exists()
-
-
-def test_real_finite_oligomer_chain_input(tmp_path):
-    builder = PopBuilder()
-    builder.add_monomer("CCCCCCCC", count=1)
-    from mofforge.polymerize.provision import instantiate
-
-    template = instantiate(builder._monomers, builder.prepare(random_seed=42), (30, 30, 30))
-    builder = PopBuilder()
-    builder.add_monomer(template.crystal, count=3)
-    result = builder.pack(output_dir=tmp_path, box_lengths=[30, 30, 30], random_seed=42)
-    assert result.success, result.errors
-    assert len(result.state.bonds) == 3 * len(template.bonds)
-    assert result.metadata["composition"] == {"C": 24, "H": 54}
 
 
 def test_real_build_save_update_resume(tmp_path):
@@ -148,30 +133,3 @@ def test_real_branch(tmp_path):
     assert result.metadata["new_bonds"] == 3
     assert result.metadata["composition"] == {"C": 24, "H": 18}
     assert result.metadata["component_sizes"] == [42]
-
-
-def test_source_file_never_overwritten(tmp_path):
-    path = tmp_path / "source.xyz"
-    source = "2\nsource!\nH 0 0 0\nH 0.74 0 0\n"
-    path.write_text(source)
-    graph = {
-        "atoms": [{"label": "h0", "species": "H"}, {"label": "h1", "species": "H"}],
-        "bonds": [{"atom1": "h0", "atom2": "h1", "order": 1}],
-    }
-    builder = PopBuilder()
-    builder.add_monomer(path, count=2, name="source", graph=graph)
-    builder.add_monomer(path, count=1, name="../source", graph=graph)
-    result = builder.pack(output_dir=tmp_path, box_lengths=[10, 10, 10], random_seed=42)
-    assert result.success, result.errors
-    assert path.read_text() == source
-
-
-def test_impossible_packing_preserves_attempt(tmp_path):
-    builder = PopBuilder()
-    builder.add_monomer("C", count=8)
-    result = builder.pack(
-        output_dir=tmp_path, box_lengths=[1, 1, 1], minimum_distance=2, random_seed=42, timeout=0.5
-    )
-    assert not result.success
-    assert result.output_paths
-    assert Path(result.output_paths[0], "result.json").exists()

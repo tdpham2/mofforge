@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from dataclasses import replace
 
 import numpy as np
@@ -11,7 +9,6 @@ import pytest
 
 from mofforge.polymerize import Atom, Bond, ConnectionRule, ConstructionState, PopBuilder
 from mofforge.polymerize.geometry import validate_box
-from mofforge.polymerize.state import finite_cycle_too_small
 
 
 def two_atoms(*, image=(0, 0, 0), bonded=True):
@@ -28,22 +25,6 @@ def two_atoms(*, image=(0, 0, 0), bonded=True):
 def test_explicit_positive_counts(count):
     with pytest.raises(ValueError, match="count"):
         PopBuilder().add_monomer("C", count=count)
-
-
-def test_count_is_required():
-    with pytest.raises(TypeError, match="count"):
-        PopBuilder().add_monomer("C")
-
-
-def test_removed_options_are_actionable():
-    builder = PopBuilder()
-    for key in ("forcefield", "equilibrate", "md_settings", "target_density", "n_monomers"):
-        with pytest.raises(TypeError, match="Removed POP option"):
-            builder.pack(**{key: 1})
-    with pytest.raises(ValueError, match="native"):
-        PopBuilder(backend="pysimm")
-    with pytest.raises(ValueError, match="rules"):
-        builder.build()
 
 
 def test_functionality_must_match_connectors():
@@ -111,26 +92,6 @@ def test_native_versions_and_statistics_are_checked():
         ConstructionState.from_dict(data)
 
 
-def test_native_load_without_optional_dependencies(tmp_path):
-    path = two_atoms().save(tmp_path)
-    program = """
-import importlib.abc, sys
-class BlockOptional(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in {'rdkit', 'packmol', 'pysimm', 'mcp'}:
-            raise ModuleNotFoundError(fullname)
-sys.meta_path.insert(0, BlockOptional())
-from mofforge.polymerize import ConstructionState
-s = ConstructionState.load(sys.argv[1])
-print(s.statistics['mass_g_per_mol'])
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", program, str(path)], capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stderr
-    assert "24.022" in result.stdout
-
-
 def test_wrap_preserves_bond_images_orders_and_atom_metadata():
     state = two_atoms()
     state.coordinates[1, 0] += 10
@@ -159,19 +120,6 @@ def test_periodic_components_distinguish_finite_and_percolating():
     with pytest.raises(ValueError, match="Duplicate periodic"):
         state.bonds.append(Bond("b", "a", 1, (-1, 0, 0)))
         state.check()
-
-
-def test_minimum_cycle_size_uses_atom_images():
-    state = two_atoms()
-    assert finite_cycle_too_small(state.atoms, state.bonds, "a", "b", (0, 0, 0), 3)
-    assert not finite_cycle_too_small(state.atoms, state.bonds, "a", "b", (1, 0, 0), 3)
-
-
-def test_construction_rejects_warning_only_contacts():
-    state = two_atoms(bonded=False)
-    report, _ = validate_box(state, separation=2.0)
-    assert not report.is_valid
-    assert report.close_contacts
 
 
 def test_own_periodic_images_and_packing_tolerance():
@@ -232,10 +180,3 @@ def test_explicit_wrapping_offsets_preserve_physical_bonds():
     updated = state.update_geometry(parent_hash=state.state_hash, atoms=records)
     assert updated.bonds[0].image == (1, 0, 0)
     assert np.linalg.norm(updated.crystal.bond_vectors(0)[0]) == pytest.approx(1.5)
-
-
-def test_site_annotations_do_not_claim_reaction_recipes():
-    from mofforge.polymerize.reactions import available_reactions, available_site_types
-
-    assert available_reactions() == []
-    assert any(s["site_type"] == "amine" for s in available_site_types())

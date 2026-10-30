@@ -506,27 +506,7 @@ def build_list_cmd(backend, list_type, tobacco_data_dir, tobacco_path, verbose):
         click.echo(f"  {item}")
 
 
-def _removed_pop_option(ctx, param, value):
-    if value is not None:
-        from mofforge.polymerize.base import reject_removed
-
-        try:
-            reject_removed({param.name: value})
-        except TypeError as exc:
-            raise click.BadParameter(str(exc), ctx=ctx, param=param) from exc
-    return value
-
-
 def _pop_options(function):
-    for option in ("target-density", "forcefield", "md-settings", "n-monomers"):
-        function = click.option(
-            "--" + option, hidden=True, default=None, is_eager=True,
-            expose_value=False, callback=_removed_pop_option,
-        )(function)
-    function = click.option(
-        "--equilibrate/--no-equilibrate", hidden=True, default=None, is_eager=True,
-        expose_value=False, callback=_removed_pop_option,
-    )(function)
     function = click.option(
         "--config", "config_path", type=click.Path(exists=True, dir_okay=False), required=True,
         help="JSON box configuration: explicit component counts and packing/connection options.",
