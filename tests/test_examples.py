@@ -82,7 +82,7 @@ def successful_example(script, out, *arguments, cwd=None, core_only=False):
 def test_catalog_covers_every_lesson_and_guide():
     scripts = {str(p.relative_to(EXAMPLES)) for p in EXAMPLES.glob("*/*.py")}
     listed = [entry["script"] for entry in CATALOG]
-    assert len(listed) == len(set(listed)) == 36
+    assert len(listed) == len(set(listed)) == 37
     assert scripts == set(listed)
     for entry in CATALOG:
         assert (EXAMPLES / entry["guide"]).is_file(), entry

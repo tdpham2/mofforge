@@ -49,6 +49,17 @@ file integrity and recorded batch inputs with `mofforge verify <artifact> --json
 - Unified `MOFBuilder` API across both backends
 - Support for carboxylate, direct, and carboxylic connection modes
 
+### Polymer Box Construction
+
+- Pack explicit counts of molecules or finite chains with Packmol into periodic boxes.
+- Construct connections with declared connectors and complete graph-edit rules.
+- Size initial boxes using lengths or an initial packing density; no universal density default.
+- Preserve topology, periodic bonds, and atom identities in verified native JSON bundles,
+  alongside P1 CIF and XYZ interchange files.
+- Export geometry to MatKit for relaxation and MD, then import mapped geometry to resume construction.
+- Use `mofforge pack`, `mofforge polymerize`, and `mofforge pop-doctor`;
+  see [the construction guide](docs/polymerize.md).
+
 ### Adsorbate Placement
 
 - Automatic adsorption site detection (void sites via 3D grid sampling, open-metal sites via coordination analysis)
@@ -59,7 +70,7 @@ file integrity and recorded batch inputs with `mofforge verify <artifact> --json
 ### Visualization & AI Integration
 
 - Structure rendering to PNG via 3Dmol.js + Playwright (ball-stick, stick, sphere representations)
-- MCP (Model Context Protocol) server exposing 23 tools for AI agent integration (search/replace, build, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
+- MCP (Model Context Protocol) server exposing 26 tools for AI agent integration (search/replace, build, pack, polymerize, validate, render, CoRE MOF / CSD search and screening, structure retrieval, adsorbate placement)
 - Optional [ChemGraph](https://github.com/argonne-lcf/ChemGraph) integration -- an HPC-aware `CGFastMCP` server for backend execution and ensemble fan-out (see [docs/chemgraph.md](docs/chemgraph.md))
 - Atom labels, unit cell edges, chemical formula overlay
 
@@ -99,6 +110,7 @@ Optional dependencies for specific features:
 pip install mofforge[build]   # Pormake + TOBACCO (tested with Python 3.11)
 pip install mofforge[vis]     # PNG rendering (Playwright)
 pip install mofforge[chem]    # SMILES conversion (RDKit)
+pip install mofforge[pop]     # molecular preparation (RDKit); install Packmol separately
 pip install mofforge[mcp]     # MCP server for AI agents
 pip install mofforge[all]     # everything above
 ```

@@ -280,5 +280,14 @@
     "topic": "Complete workflows",
     "guide": "workflows/README.md",
     "requires": []
+  },
+  {
+    "script": "polymerize/amorphous_pop.py",
+    "title": "Prepare and construct an explicit polymer box",
+    "topic": "Polymerization",
+    "guide": "polymerize/README.md",
+    "requires": [
+      "rdkit"
+    ]
   }
 ]

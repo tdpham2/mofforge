@@ -32,10 +32,12 @@ __all__ = [
     "list_adsorbates_impl",
     "list_fragments_impl",
     "list_functional_groups_impl",
+    "list_reactions_impl",
     "load_crystal",
     "load_fragment",
     "lookup_mof_impl",
     "place_adsorbate_impl",
+    "polymerize_impl",
     "render_impl",
     "resolve_output",
     "screen_coremof_impl",
@@ -653,6 +655,40 @@ def functionalize_campaign_impl(
     except Exception as exc:
         logger.warning("functionalize_campaign failed", exc_info=True)
         return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Amorphous polymer (POP) generation
+# ---------------------------------------------------------------------------
+
+
+def list_reactions_impl() -> dict[str, Any]:
+    """List optional site annotations; there are no built-in reaction recipes."""
+    from mofforge.polymerize.reactions import available_site_types
+
+    return {"success": True, "site_types": available_site_types(), "reactions": [],
+            "note": "SMARTS annotations only; construction requires explicit connection rules."}
+
+
+def _box_impl(config, output_dir, operation):
+    try:
+        from mofforge.polymerize import run_config
+
+        out = resolve_output(os.path.join(output_dir, "box-output"))
+        return run_config(config, operation=operation, output_dir=str(Path(out).parent)).to_dict()
+    except (ValueError, TypeError, KeyError, OSError, ImportError) as exc:
+        return {"success": False, "operation": operation, "status": "failed", "errors": [str(exc)]}
+
+
+def pack_impl(config: dict, output_dir: str = ".") -> dict[str, Any]:
+    """Run direct Packmol packing with the shared JSON box configuration."""
+    return _box_impl(config, output_dir, "pack")
+
+
+def polymerize_impl(config: dict, output_dir: str = ".") -> dict[str, Any]:
+    """Run native explicit connection construction; preserve partial-state output."""
+    return _box_impl(config, output_dir, "connect")
+
 
 
 def render_impl(

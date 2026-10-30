@@ -37,6 +37,7 @@ class PeriodicBond:
     j: int
     image: tuple[int, int, int]
     distance: float
+    order: float | None = None
 
 
 class Crystal:
@@ -150,7 +151,7 @@ class Crystal:
                 distance = float(
                     np.linalg.norm(self.to_cart(frac[bond.j] + bond.image - frac[bond.i]))
                 )
-                refreshed = PeriodicBond(bond.i, bond.j, bond.image, distance)
+                refreshed = PeriodicBond(bond.i, bond.j, bond.image, distance, bond.order)
                 updated.append(refreshed)
                 by_pair.setdefault((bond.i, bond.j), []).append(refreshed)
             self.periodic_bonds = updated
@@ -164,11 +165,15 @@ class Crystal:
                 distance, raw_image = self.lattice.get_distance_and_image(frac[i], frac[j])
                 image = tuple(int(x) for x in raw_image)
                 if self.periodic_bonds is not None:
-                    self.periodic_bonds.append(PeriodicBond(i, j, image, float(distance)))
+                    self.periodic_bonds.append(
+                        PeriodicBond(i, j, image, float(distance), data.get("order"))
+                    )
             else:
                 distance = np.linalg.norm(self.to_cart(frac[j] - frac[i]))
                 image = (0, 0, 0)
             data.update(distance=float(distance), image=image, cross_boundary=any(image))
+            if candidates and bond.order is not None:
+                data["order"] = bond.order
 
     @classmethod
     def from_cif(cls, filepath: str | Path, name: str | None = None) -> Crystal:
@@ -264,7 +269,7 @@ class Crystal:
         old_to_new = {old: new for new, old in enumerate(indices)}
         new_bonds = nx.Graph()
         for new_idx, old_idx in enumerate(indices):
-            new_bonds.add_node(new_idx, species=self._species_labels[old_idx])
+            new_bonds.add_node(new_idx, **copy.deepcopy(self.bonds.nodes[old_idx]))
         for u, v, data in self.bonds.edges(data=True):
             if u in old_to_new and v in old_to_new:
                 new_bonds.add_edge(old_to_new[u], old_to_new[v], **copy.deepcopy(data))
@@ -279,7 +284,7 @@ class Crystal:
                     if i > j:
                         i, j = j, i
                         image = tuple(-x for x in image)
-                    periodic_bonds.append(PeriodicBond(i, j, image, b.distance))
+                    periodic_bonds.append(PeriodicBond(i, j, image, b.distance, b.order))
 
         return Crystal(
             name=f"subset_{self.name}",
@@ -359,7 +364,7 @@ class Crystal:
                 if not np.allclose(self.lattice.matrix, other.lattice.matrix):
                     raise ValueError("Cannot combine periodic bond images from different lattices.")
                 periodic_bonds.extend(
-                    PeriodicBond(b.i + offset, b.j + offset, b.image, b.distance)
+                    PeriodicBond(b.i + offset, b.j + offset, b.image, b.distance, b.order)
                     for b in other.periodic_bonds
                 )
 
@@ -409,6 +414,7 @@ class Crystal:
                     b.j,
                     tuple(int(x) for x in np.array(b.image) + shifts[b.j] - shifts[b.i]),
                     b.distance,
+                    b.order,
                 )
                 for b in self.periodic_bonds
             ]
